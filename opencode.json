@@ -1,0 +1,26 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "ornith-35b",
+  "provider": {
+    "atomic-chat": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Ornith Local",
+      "options": {
+        "baseURL": "http://127.0.0.1:8085/v1",
+        "timeout": 600000,
+        "headerTimeout": 180000,
+        "chunkTimeout": 120000
+      },
+      "models": {
+        "ornith-35b": {
+          "name": "Ornith-1.0-35B",
+          "reasoning": true,
+          "interleaved": {
+            "field": "reasoning_content",
+            "startWith": "reasoning"
+          }
+        }
+      }
+    }
+  }
+}

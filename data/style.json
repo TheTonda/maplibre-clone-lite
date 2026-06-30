@@ -1,6 +1,6 @@
 {
   "version": 8,
-  "name": "test-style",
+  "name": "osm-3d-style",
   "layers": [
     {
       "id": "background",
@@ -15,6 +15,14 @@
       "paint": {
         "fill-color": "#ff6600",
         "fill-opacity": 1.0
+      }
+    },
+    {
+      "id": "buildings",
+      "type": "fill-extrusion",
+      "paint": {
+        "fill-extrusion-color": "#888888",
+        "fill-extrusion-opacity": 0.92
       }
     },
     {
@@ -35,22 +43,6 @@
       }
     },
     {
-      "id": "buildings",
-      "type": "fill",
-      "paint": {
-        "fill-color": "#cc6644",
-        "fill-opacity": 0.85
-      }
-    },
-    {
-      "id": "land",
-      "type": "fill",
-      "paint": {
-        "fill-color": "#334422",
-        "fill-opacity": 0.6
-      }
-    },
-    {
       "id": "water_polygons",
       "type": "fill",
       "paint": {
@@ -65,6 +57,22 @@
         "line-color": "#eedd88",
         "line-width": 2.0,
         "line-opacity": 0.95
+      }
+    },
+    {
+      "id": "parks",
+      "type": "fill",
+      "paint": {
+        "fill-color": "#336622",
+        "fill-opacity": 0.7
+      }
+    },
+    {
+      "id": "landuse",
+      "type": "fill",
+      "paint": {
+        "fill-color": "#445533",
+        "fill-opacity": 0.5
       }
     }
   ]

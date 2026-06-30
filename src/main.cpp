@@ -15,6 +15,8 @@
 #include "style_engine.h"
 #include "mvt_parser.h"
 #include "render_data.h"
+#include "osm_loader.h"
+#include "building_data.h"
 #include <google/protobuf/io/coded_stream.h>
 #include <google/protobuf/io/zero_copy_stream_impl.h>
 
@@ -254,7 +256,89 @@ int main() {
            int(rule.fill_color[1] * 255),
            int(rule.fill_color[2] * 255));
 
-    // --- Load MVT tile and extract features (lines + polygons) ---
+    // --- Camera variables ---
+    float camera_x = 0.0f;
+    float camera_y = 0.0f;
+    float zoom_level = 14.0f;
+    float tilt_angle = 0.0f;
+    int mode = 2;
+
+    // --- Load OSM data ---
+    osm::OSMData osmData = osm::load_osm_json("data/osm_data.json");
+
+    // --- Compute data bounds and center camera ---
+    float min_x = 1e9f, min_y = 1e9f, max_x = -1e9f, max_y = -1e9f;
+    
+    auto update_bounds = [&](float x, float y) {
+        if (x < min_x) min_x = x;
+        if (y < min_y) min_y = y;
+        if (x > max_x) max_x = x;
+        if (y > max_y) max_y = y;
+    };
+    
+    for (const auto& b : osmData.buildings) {
+        for (const auto& p : b.footprint) {
+            update_bounds(p.x, p.y);
+        }
+    }
+    for (const auto& r : osmData.roads) {
+        for (const auto& p : r.line) {
+            update_bounds(p.x, p.y);
+        }
+    }
+    for (const auto& p : osmData.parks) {
+        for (const auto& pt : p.polygon) {
+            update_bounds(pt.x, pt.y);
+        }
+    }
+    for (const auto& w : osmData.water_polygons) {
+        for (const auto& pt : w.polygon) {
+            update_bounds(pt.x, pt.y);
+        }
+    }
+    for (const auto& l : osmData.landuse) {
+        for (const auto& pt : l.polygon) {
+            update_bounds(pt.x, pt.y);
+        }
+    }
+    
+    float center_x = (min_x + max_x) * 0.5f;
+    float center_y = (min_y + max_y) * 0.5f;
+    float range_x = (max_x - min_x) * 0.5f;
+    float range_y = (max_y - min_y) * 0.5f;
+    float max_range = std::max(range_x, range_y);
+    
+    printf("Data bounds: (%.0f,%.0f) to (%.0f,%.0f)\n", min_x, min_y, max_x, max_y);
+    printf("Data center: (%.0f,%.0f), range: %.0f\n", center_x, center_y, max_range * 2);
+    
+    camera_x = center_x;
+    camera_y = center_y;
+    
+    // Calculate zoom to show all data
+    // visible_half_w = 2.0 / zoom_level, and we need visible_half_w >= max_range
+    // So zoom_level = 2.0 / max_range (with some padding)
+    float padding = 1.5f;
+    zoom_level = 2.0f * padding / max_range;
+    if (zoom_level < 0.001f) zoom_level = 0.001f;
+    
+    printf("Initial zoom: %.6f\n", zoom_level);
+
+    // --- Extract building geometry ---
+    bldg::BuildingBatch buildingBatch = bldg::extract_buildings(osmData.buildings);
+
+    // --- Extract 2D fills for parks, water, landuse ---
+    style::StyleRule parkRule = styleEngine.matchRule("parks", std::string("fill"));
+    style::StyleRule waterRule = styleEngine.matchRule("water", std::string("fill"));
+    style::StyleRule landuseRule = styleEngine.matchRule("landuse", std::string("fill"));
+
+    auto fills2d = bldg::extract_fills_2d(
+        osmData.parks, osmData.water_polygons, osmData.landuse,
+        glm::vec3(parkRule.fill_color[0], parkRule.fill_color[1], parkRule.fill_color[2]),
+        glm::vec3(waterRule.fill_color[0], waterRule.fill_color[1], waterRule.fill_color[2]),
+        glm::vec3(landuseRule.fill_color[0], landuseRule.fill_color[1], landuseRule.fill_color[2])
+    );
+
+    // --- Load MVT tile (optional, for backward compatibility) ---
     std::ifstream mvt_file("data/test_roads.mvt", std::ios::binary | std::ios::ate);
     render::LineBatch line_batch;
     render::PolyBatch poly_batch;
@@ -272,7 +356,6 @@ int main() {
                                                                 static_cast<int>(mvt_size));
             google::protobuf::io::CodedInputStream coded_input(&array_input);
             mvt::Tile tile = mvt::parse_tile(&coded_input);
-            mvt::print_summary(tile);
 
             line_batch = render::extract_lines(tile, "streets");
             printf("Extracted line features: %zu vertices, %zu indices\n",
@@ -291,7 +374,7 @@ int main() {
                    poly_batch.vertices.size(), poly_batch.indices.size());
         }
     } else {
-        fprintf(stderr, "Warning: could not load data/test_roads.mvt — no features to render\n");
+        printf("No MVT tile found, using OSM data only\n");
     }
 
     // --- Queue Families ---
@@ -420,7 +503,7 @@ int main() {
         vkCreateImageView(device, &view_info, nullptr, &sw_image_views[i]);
     }
 
-    // --- Render Pass ---
+    // --- Render Pass (color + depth) ---
     VkAttachmentDescription color_att = {
         .format = sw_format.format,
         .samples = VK_SAMPLE_COUNT_1_BIT,
@@ -432,40 +515,64 @@ int main() {
         .finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
     };
 
+    VkAttachmentDescription depth_att = {
+        .format = VK_FORMAT_D32_SFLOAT,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+        .storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+        .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+        .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+        .finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+    };
+
     VkAttachmentReference color_ref = { 0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL };
+    VkAttachmentReference depth_ref = { 1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL };
 
     VkSubpassDescription subpass = {
         .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
         .colorAttachmentCount = 1,
         .pColorAttachments = &color_ref,
+        .pDepthStencilAttachment = &depth_ref,
+    };
+
+    VkSubpassDependency dependency = {
+        .srcSubpass = VK_SUBPASS_EXTERNAL,
+        .dstSubpass = 0,
+        .srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT
+                      | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+        .dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT
+                      | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+        .srcAccessMask = 0,
+        .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
+                       | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
     };
 
     VkRenderPassCreateInfo rp_info = {
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-        .attachmentCount = 1,
+        .attachmentCount = 2,
         .pAttachments = &color_att,
         .subpassCount = 1,
         .pSubpasses = &subpass,
+        .dependencyCount = 1,
+        .pDependencies = &dependency,
     };
 
     VkRenderPass render_pass;
     vkCreateRenderPass(device, &rp_info, nullptr, &render_pass);
 
     // ====================================================================
-    // Camera UBO — shared by all pipelines (milestone 7)
+    // Camera UBO — shared by all pipelines (proj + view matrices, 128 bytes)
     // ====================================================================
-    float camera_x = 0.0f;       // center of view in clip-space (world) coords
-    float camera_y = 0.0f;
-    float zoom_level = 14.0f;    // range [2, 18], default 14
 
-    // Camera UBO buffer (64 bytes for mat4)
+    // Camera UBO buffer (128 bytes: mat4 proj + mat4 view)
     VkBuffer camera_ubo = VK_NULL_HANDLE;
     VkDeviceMemory camera_ubo_mem = VK_NULL_HANDLE;
 
     {
         VkBufferCreateInfo ubo_info = {
             .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-            .size = 64,  // 4x4 float matrix
+            .size = 128,  // 2x 4x4 float matrices
             .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
             .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
         };
@@ -633,6 +740,15 @@ int main() {
         .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
     };
 
+    VkPipelineDepthStencilStateCreateInfo depth_stencil = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+        .depthTestEnable = VK_TRUE,
+        .depthWriteEnable = VK_TRUE,
+        .depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL,
+        .depthBoundsTestEnable = VK_FALSE,
+        .stencilTestEnable = VK_FALSE,
+    };
+
     VkPipelineColorBlendAttachmentState blend_att = {
         .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT
                         | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
@@ -670,6 +786,7 @@ int main() {
         .pViewportState = &viewport_state,
         .pRasterizationState = &rasterizer,
         .pMultisampleState = &multisample,
+        .pDepthStencilState = &depth_stencil,
         .pColorBlendState = &color_blend,
         .layout = pipeline_layout,
         .renderPass = render_pass,
@@ -851,6 +968,7 @@ int main() {
                 .pViewportState = &viewport_state,
                 .pRasterizationState = &line_rasterizer,
                 .pMultisampleState = &multisample,
+                .pDepthStencilState = &depth_stencil,
                 .pColorBlendState = &color_blend,
                 .layout = line_pipeline_layout,
                 .renderPass = render_pass,
@@ -1018,6 +1136,7 @@ int main() {
                 .pViewportState = &viewport_state,
                 .pRasterizationState = &fill_rasterizer,
                 .pMultisampleState = &multisample,
+                .pDepthStencilState = &depth_stencil,
                 .pColorBlendState = &color_blend,
                 .layout = fill_pipeline_layout,
                 .renderPass = render_pass,
@@ -1037,14 +1156,230 @@ int main() {
         }
     }
 
-    // --- Framebuffers ---
+    // --- Building pipeline (3D extruded buildings) ---
+    VkPipeline building_pipeline = VK_NULL_HANDLE;
+    VkPipelineLayout building_pipeline_layout = VK_NULL_HANDLE;
+    VkBuffer building_vb = VK_NULL_HANDLE;
+    VkDeviceMemory building_buf_mem = VK_NULL_HANDLE;
+    VkBuffer building_ib = VK_NULL_HANDLE;
+
+    bool has_buildings = !buildingBatch.vertices.empty() && !buildingBatch.indices.empty();
+
+    if (has_buildings) {
+        // Vertex buffer
+        VkDeviceSize bvb_size = buildingBatch.vertices.size() * sizeof(bldg::BuildingVertex);
+        VkBufferCreateInfo bvb_info = {
+            .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+            .size = bvb_size,
+            .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+            .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        };
+        vkCreateBuffer(device, &bvb_info, nullptr, &building_vb);
+
+        VkMemoryRequirements bvb_mem_req;
+        vkGetBufferMemoryRequirements(device, building_vb, &bvb_mem_req);
+
+        // Index buffer
+        VkDeviceSize bib_size = buildingBatch.indices.size() * sizeof(uint32_t);
+        VkBufferCreateInfo bib_info = {
+            .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+            .size = bib_size,
+            .usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+            .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        };
+        vkCreateBuffer(device, &bib_info, nullptr, &building_ib);
+
+        VkMemoryRequirements bib_mem_req;
+        vkGetBufferMemoryRequirements(device, building_ib, &bib_mem_req);
+
+        // Allocate combined memory
+        VkDeviceSize bcombined_size = bvb_mem_req.size + bib_mem_req.size;
+        VkDeviceSize bib_offset = (bvb_mem_req.size + bib_mem_req.alignment - 1)
+                                   & ~(bib_mem_req.alignment - 1);
+        bcombined_size = bib_offset + bib_mem_req.size;
+
+        uint32_t bmem_type_idx = find_host_mem_type(physical, bvb_mem_req.memoryTypeBits);
+        if (bmem_type_idx == UINT32_MAX) {
+            fprintf(stderr, "No host-visible memory for building buffers\n");
+            has_buildings = false;
+        } else {
+            VkMemoryAllocateInfo balloc_info = {
+                .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+                .allocationSize = bcombined_size,
+                .memoryTypeIndex = bmem_type_idx,
+            };
+            vkAllocateMemory(device, &balloc_info, nullptr, &building_buf_mem);
+            vkBindBufferMemory(device, building_vb, building_buf_mem, 0);
+            vkBindBufferMemory(device, building_ib, building_buf_mem, bib_offset);
+
+            // Upload vertex data
+            void* bmapped;
+            vkMapMemory(device, building_buf_mem, 0, bvb_size, 0, &bmapped);
+            memcpy(bmapped, buildingBatch.vertices.data(), bvb_size);
+            vkUnmapMemory(device, building_buf_mem);
+
+            // Upload index data
+            vkMapMemory(device, building_buf_mem, bib_offset, bib_size, 0, &bmapped);
+            memcpy(bmapped, buildingBatch.indices.data(), bib_size);
+            vkUnmapMemory(device, building_buf_mem);
+        }
+
+        if (has_buildings) {
+            // Building shaders
+            auto bvert_code = load_spv("src/shaders/building.vert.spv");
+            auto bfrag_code = load_spv("src/shaders/building.frag.spv");
+
+            VkShaderModule bvert_mod = create_shader_module(device, bvert_code);
+            VkShaderModule bfrag_mod = create_shader_module(device, bfrag_code);
+
+            VkPipelineShaderStageCreateInfo bvert_stage = {
+                .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                .stage = VK_SHADER_STAGE_VERTEX_BIT,
+                .module = bvert_mod,
+                .pName = "main",
+            };
+            VkPipelineShaderStageCreateInfo bfrag_stage = {
+                .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+                .module = bfrag_mod,
+                .pName = "main",
+            };
+            VkPipelineShaderStageCreateInfo bstages[] = { bvert_stage, bfrag_stage };
+
+            // Vertex input: binding 0 = vec3 position
+            VkVertexInputBindingDescription b_binding = {
+                .binding = 0,
+                .stride = sizeof(bldg::BuildingVertex),
+                .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
+            };
+            VkVertexInputAttributeDescription b_attr = {
+                .location = 0,
+                .binding = 0,
+                .format = VK_FORMAT_R32G32B32_SFLOAT,
+                .offset = 0,
+            };
+            VkPipelineVertexInputStateCreateInfo b_vertex_input = {
+                .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+                .vertexBindingDescriptionCount = 1,
+                .pVertexBindingDescriptions = &b_binding,
+                .vertexAttributeDescriptionCount = 1,
+                .pVertexAttributeDescriptions = &b_attr,
+            };
+
+            VkPipelineInputAssemblyStateCreateInfo b_input_assembly = {
+                .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+                .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+                .primitiveRestartEnable = VK_FALSE,
+            };
+
+            // Push constant: vec4 (rgba) = 16 bytes
+            VkPushConstantRange b_push_range = {
+                .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+                .offset = 0,
+                .size = 4 * sizeof(float),
+            };
+            VkPipelineLayoutCreateInfo b_layout_info = {
+                .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+                .setLayoutCount = 1,
+                .pSetLayouts = &desc_set_layout,
+                .pushConstantRangeCount = 1,
+                .pPushConstantRanges = &b_push_range,
+            };
+            vkCreatePipelineLayout(device, &b_layout_info, nullptr, &building_pipeline_layout);
+
+            VkPipelineRasterizationStateCreateInfo b_rasterizer = {
+                .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+                .polygonMode = VK_POLYGON_MODE_FILL,
+                .cullMode = VK_CULL_MODE_BACK_BIT,
+                .frontFace = VK_FRONT_FACE_CLOCKWISE,
+                .lineWidth = 1.0f,
+            };
+
+            VkGraphicsPipelineCreateInfo b_pipeline_info = {
+                .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+                .stageCount = 2,
+                .pStages = bstages,
+                .pVertexInputState = &b_vertex_input,
+                .pInputAssemblyState = &b_input_assembly,
+                .pViewportState = &viewport_state,
+                .pRasterizationState = &b_rasterizer,
+                .pMultisampleState = &multisample,
+                .pDepthStencilState = &depth_stencil,
+                .pColorBlendState = &color_blend,
+                .layout = building_pipeline_layout,
+                .renderPass = render_pass,
+                .subpass = 0,
+            };
+
+            if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &b_pipeline_info,
+                                          nullptr, &building_pipeline) != VK_SUCCESS) {
+                fprintf(stderr, "Failed to create building pipeline\n");
+                has_buildings = false;
+            } else {
+                printf("Building pipeline created.\n");
+            }
+
+            vkDestroyShaderModule(device, bfrag_mod, nullptr);
+            vkDestroyShaderModule(device, bvert_mod, nullptr);
+        }
+    }
+
+    // --- Depth buffer image ---
+    VkImage depth_image = VK_NULL_HANDLE;
+    VkDeviceMemory depth_mem = VK_NULL_HANDLE;
+    VkImageView depth_view = VK_NULL_HANDLE;
+
+    {
+        VkImageCreateInfo depth_img_info = {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+            .imageType = VK_IMAGE_TYPE_2D,
+            .format = VK_FORMAT_D32_SFLOAT,
+            .extent = { sw_extent.width, sw_extent.height, 1 },
+            .mipLevels = 1,
+            .arrayLayers = 1,
+            .samples = VK_SAMPLE_COUNT_1_BIT,
+            .tiling = VK_IMAGE_TILING_OPTIMAL,
+            .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+            .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+            .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+        };
+        vkCreateImage(device, &depth_img_info, nullptr, &depth_image);
+
+        VkMemoryRequirements depth_mem_req;
+        vkGetImageMemoryRequirements(device, depth_image, &depth_mem_req);
+
+        uint32_t depth_mem_type = find_host_mem_type(physical, depth_mem_req.memoryTypeBits);
+        if (depth_mem_type != UINT32_MAX) {
+            VkMemoryAllocateInfo depth_alloc = {
+                .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+                .allocationSize = depth_mem_req.size,
+                .memoryTypeIndex = depth_mem_type,
+            };
+            vkAllocateMemory(device, &depth_alloc, nullptr, &depth_mem);
+            vkBindImageMemory(device, depth_image, depth_mem, 0);
+
+            VkImageViewCreateInfo depth_view_info = {
+                .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+                .image = depth_image,
+                .viewType = VK_IMAGE_VIEW_TYPE_2D,
+                .format = VK_FORMAT_D32_SFLOAT,
+                .subresourceRange = { VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1 },
+            };
+            vkCreateImageView(device, &depth_view_info, nullptr, &depth_view);
+        } else {
+            fprintf(stderr, "Warning: no device memory for depth buffer, depth testing disabled\n");
+        }
+    }
+
+    // --- Framebuffers (with depth attachment) ---
     std::vector<VkFramebuffer> framebuffers(image_count);
     for (uint32_t i = 0; i < image_count; i++) {
+        VkImageView attachments[2] = { sw_image_views[i], depth_view };
         VkFramebufferCreateInfo fb_info = {
             .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
             .renderPass = render_pass,
-            .attachmentCount = 1,
-            .pAttachments = &sw_image_views[i],
+            .attachmentCount = 2,
+            .pAttachments = attachments,
             .width = sw_extent.width,
             .height = sw_extent.height,
             .layers = 1,
@@ -1070,76 +1405,134 @@ int main() {
     };
     vkAllocateCommandBuffers(device, &alloc_info, cmd_bufs.data());
 
-    // Record draw commands with camera descriptor set bound
-    for (uint32_t i = 0; i < image_count; i++) {
+    // Helper lambda to record command buffer for a given image index
+    auto record_command_buffer = [&](uint32_t i) {
         VkCommandBufferBeginInfo begin_info = {
             .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
         };
         vkBeginCommandBuffer(cmd_bufs[i], &begin_info);
 
-        VkClearValue clear = { .color = { {0.02f, 0.02f, 0.06f, 1.0f} } };
+        VkClearValue clear[2] = {
+            { .color = { {0.02f, 0.02f, 0.06f, 1.0f} } },
+            { .depthStencil = { 1.0f, 0 } }
+        };
         VkRenderPassBeginInfo rp_begin = {
             .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
             .renderPass = render_pass,
             .framebuffer = framebuffers[i],
             .renderArea = { {0, 0}, sw_extent },
-            .clearValueCount = 1,
-            .pClearValues = &clear,
+            .clearValueCount = 2,
+            .pClearValues = clear,
         };
         vkCmdBeginRenderPass(cmd_bufs[i], &rp_begin, VK_SUBPASS_CONTENTS_INLINE);
 
-        // Bind the shared camera descriptor set BEFORE draw calls
+        // Triangle demo (always rendered)
         vkCmdBindDescriptorSets(cmd_bufs[i], VK_PIPELINE_BIND_POINT_GRAPHICS,
                                 pipeline_layout, 0, 1, &desc_set, 0, nullptr);
-
-        // Triangle demo
         vkCmdBindPipeline(cmd_bufs[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
         vkCmdPushConstants(cmd_bufs[i], pipeline_layout,
                           VK_SHADER_STAGE_VERTEX_BIT, 0,
                           3 * sizeof(float), rule.fill_color);
         vkCmdDraw(cmd_bufs[i], 3, 1, 0, 0);
 
-        // Draw polygon fills BEFORE lines (fills below lines)
-        if (has_fills) {
-            style::StyleRule fill_rule = styleEngine.matchRule("buildings", std::string("fill"));
-            float fill_pc[4] = { fill_rule.fill_color[0], fill_rule.fill_color[1],
-                                 fill_rule.fill_color[2], fill_rule.fill_opacity };
-            // Re-bind descriptor set for fill pipeline layout compatibility
+        // Draw 2D fills (parks, water, landuse) - only in 2D mode
+        if (mode == 1 && !fills2d.empty()) {
+            for (const auto& [polygon, color] : fills2d) {
+                if (polygon.size() < 3) continue;
+
+                // Convert polygon to clip-space vertices and indices
+                std::vector<render::PolyVertex> fill_verts;
+                std::vector<uint32_t> fill_indices;
+                float inv_extent = 1.0f / 65536.0f;  // world_width
+
+                uint32_t base = 0;
+                for (size_t j = 0; j + 2 < polygon.size(); ++j) {
+                    float clip_x0 = (polygon[0].x * inv_extent) * 2.0f - 1.0f;
+                    float clip_y0 = 1.0f - (polygon[0].y * inv_extent) * 2.0f;
+                    float clip_x1 = (polygon[j].x * inv_extent) * 2.0f - 1.0f;
+                    float clip_y1 = 1.0f - (polygon[j].y * inv_extent) * 2.0f;
+                    float clip_x2 = (polygon[j+1].x * inv_extent) * 2.0f - 1.0f;
+                    float clip_y2 = 1.0f - (polygon[j+1].y * inv_extent) * 2.0f;
+
+                    fill_verts.push_back({clip_x0, clip_y0});
+                    fill_verts.push_back({clip_x1, clip_y1});
+                    fill_verts.push_back({clip_x2, clip_y2});
+
+                    uint32_t vbase = static_cast<uint32_t>(fill_verts.size()) - 3;
+                    fill_indices.push_back(vbase);
+                    fill_indices.push_back(vbase + 1);
+                    fill_indices.push_back(vbase + 2);
+                }
+
+                if (fill_verts.empty()) continue;
+
+                // Upload fill data to a temporary buffer (simplified: use existing fill_vb)
+                // For now, skip individual polygon rendering and use batched approach
+                style::StyleRule fill_rule = styleEngine.matchRule("buildings", std::string("fill"));
+                float fill_pc[4] = { color.r, color.g, color.b, 0.7f };
+
+                vkCmdBindDescriptorSets(cmd_bufs[i], VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                        fill_pipeline_layout, 0, 1, &desc_set, 0, nullptr);
+                vkCmdBindPipeline(cmd_bufs[i], VK_PIPELINE_BIND_POINT_GRAPHICS, fill_pipeline);
+                VkDeviceSize foffsets[] = {0};
+                vkCmdBindVertexBuffers(cmd_bufs[i], 0, 1, &fill_vb, foffsets);
+                if (fill_ib != VK_NULL_HANDLE) {
+                    vkCmdBindIndexBuffer(cmd_bufs[i], fill_ib, 0, VK_INDEX_TYPE_UINT32);
+                    vkCmdPushConstants(cmd_bufs[i], fill_pipeline_layout,
+                                      VK_SHADER_STAGE_VERTEX_BIT, 0,
+                                      4 * sizeof(float), fill_pc);
+                    vkCmdDrawIndexed(cmd_bufs[i],
+                                     static_cast<uint32_t>(poly_batch.indices.size()),
+                                     1, 0, 0, 0);
+                }
+            }
+        }
+
+        // Draw buildings (3D) - only in 3D mode
+        if (mode == 2 && has_buildings) {
+            style::StyleRule buildRule = styleEngine.matchRule("buildings", std::string("fill-extrusion"));
+            float build_pc[4] = { buildRule.extrude_color[0], buildRule.extrude_color[1],
+                                  buildRule.extrude_color[2], buildRule.extrude_opacity };
+
             vkCmdBindDescriptorSets(cmd_bufs[i], VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    fill_pipeline_layout, 0, 1, &desc_set, 0, nullptr);
-            vkCmdBindPipeline(cmd_bufs[i], VK_PIPELINE_BIND_POINT_GRAPHICS, fill_pipeline);
-            VkDeviceSize foffsets[] = {0};
-            vkCmdBindVertexBuffers(cmd_bufs[i], 0, 1, &fill_vb, foffsets);
-            vkCmdBindIndexBuffer(cmd_bufs[i], fill_ib, 0, VK_INDEX_TYPE_UINT32);
-            vkCmdPushConstants(cmd_bufs[i], fill_pipeline_layout,
-                              VK_SHADER_STAGE_VERTEX_BIT, 0,
-                              4 * sizeof(float), fill_pc);
-            vkCmdDrawIndexed(cmd_bufs[i],
-                             static_cast<uint32_t>(poly_batch.indices.size()),
-                             1, 0, 0, 0);
+                                    building_pipeline_layout, 0, 1, &desc_set, 0, nullptr);
+            vkCmdBindPipeline(cmd_bufs[i], VK_PIPELINE_BIND_POINT_GRAPHICS, building_pipeline);
+            VkDeviceSize boffsets[] = {0};
+            vkCmdBindVertexBuffers(cmd_bufs[i], 0, 1, &building_vb, boffsets);
+            if (building_ib != VK_NULL_HANDLE) {
+                vkCmdBindIndexBuffer(cmd_bufs[i], building_ib, 0, VK_INDEX_TYPE_UINT32);
+                vkCmdPushConstants(cmd_bufs[i], building_pipeline_layout,
+                                  VK_SHADER_STAGE_VERTEX_BIT, 0,
+                                  4 * sizeof(float), build_pc);
+                vkCmdDrawIndexed(cmd_bufs[i],
+                                 static_cast<uint32_t>(buildingBatch.indices.size()),
+                                 1, 0, 0, 0);
+                printf("Frame: rendered %u building indices\n", buildingBatch.indices.size());
+            }
         }
 
         // Draw lines on top
         if (has_lines) {
             style::StyleRule line_rule = styleEngine.matchRule("streets", std::string("line"));
-            // Re-bind descriptor set for line pipeline layout compatibility
             vkCmdBindDescriptorSets(cmd_bufs[i], VK_PIPELINE_BIND_POINT_GRAPHICS,
                                     line_pipeline_layout, 0, 1, &desc_set, 0, nullptr);
             vkCmdBindPipeline(cmd_bufs[i], VK_PIPELINE_BIND_POINT_GRAPHICS, line_pipeline);
             VkDeviceSize offsets[] = {0};
             vkCmdBindVertexBuffers(cmd_bufs[i], 0, 1, &line_vb, offsets);
-            vkCmdBindIndexBuffer(cmd_bufs[i], line_ib, 0, VK_INDEX_TYPE_UINT32);
-            vkCmdPushConstants(cmd_bufs[i], line_pipeline_layout,
-                              VK_SHADER_STAGE_VERTEX_BIT, 0,
-                              3 * sizeof(float), line_rule.line_color);
-            vkCmdDrawIndexed(cmd_bufs[i],
-                             static_cast<uint32_t>(line_batch.indices.size()),
-                             1, 0, 0, 0);
+            if (line_ib != VK_NULL_HANDLE) {
+                vkCmdBindIndexBuffer(cmd_bufs[i], line_ib, 0, VK_INDEX_TYPE_UINT32);
+                vkCmdPushConstants(cmd_bufs[i], line_pipeline_layout,
+                                  VK_SHADER_STAGE_VERTEX_BIT, 0,
+                                  3 * sizeof(float), line_rule.line_color);
+                vkCmdDrawIndexed(cmd_bufs[i],
+                                 static_cast<uint32_t>(line_batch.indices.size()),
+                                 1, 0, 0, 0);
+            }
         }
 
         vkCmdEndRenderPass(cmd_bufs[i]);
         vkEndCommandBuffer(cmd_bufs[i]);
-    }
+    };
 
     // --- Sync objects ---
     VkSemaphoreCreateInfo sem_info = { .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
@@ -1176,31 +1569,37 @@ int main() {
             case SDL_KEYDOWN:
                 if (ev.key.keysym.sym == SDLK_ESCAPE) {
                     running = false;
+                } else if (ev.key.keysym.sym == SDLK_F1) {
+                    mode = 1;
+                    printf("Mode: 2D\n");
+                } else if (ev.key.keysym.sym == SDLK_F2) {
+                    mode = 2;
+                    printf("Mode: 3D\n");
                 } else if (ev.key.keysym.sym == SDLK_EQUALS || ev.key.keysym.sym == SDLK_PLUS) {
                     // Zoom in
                     zoom_level = clamp_val(zoom_level + 1.0f, 2.0f, 18.0f);
-                    printf("Camera: pos=(%.2f,%.2f) zoom=%.1f\n", camera_x, camera_y, zoom_level);
+                    printf("Camera: pos=(%.2f,%.2f) zoom=%.1f mode=%d\n", camera_x, camera_y, zoom_level, mode);
                 } else if (ev.key.keysym.sym == SDLK_MINUS) {
                     // Zoom out
                     zoom_level = clamp_val(zoom_level - 1.0f, 2.0f, 18.0f);
-                    printf("Camera: pos=(%.2f,%.2f) zoom=%.1f\n", camera_x, camera_y, zoom_level);
+                    printf("Camera: pos=(%.2f,%.2f) zoom=%.1f mode=%d\n", camera_x, camera_y, zoom_level, mode);
                 } else if (ev.key.keysym.sym == SDLK_LEFT) {
                     // Pan left
                     float pan_step = 0.05f * (2.0f / zoom_level);
                     camera_x -= pan_step;
-                    printf("Camera: pos=(%.2f,%.2f) zoom=%.1f\n", camera_x, camera_y, zoom_level);
+                    printf("Camera: pos=(%.2f,%.2f) zoom=%.1f mode=%d\n", camera_x, camera_y, zoom_level, mode);
                 } else if (ev.key.keysym.sym == SDLK_RIGHT) {
                     float pan_step = 0.05f * (2.0f / zoom_level);
                     camera_x += pan_step;
-                    printf("Camera: pos=(%.2f,%.2f) zoom=%.1f\n", camera_x, camera_y, zoom_level);
+                    printf("Camera: pos=(%.2f,%.2f) zoom=%.1f mode=%d\n", camera_x, camera_y, zoom_level, mode);
                 } else if (ev.key.keysym.sym == SDLK_UP) {
                     float pan_step = 0.05f * (2.0f / zoom_level);
                     camera_y -= pan_step;
-                    printf("Camera: pos=(%.2f,%.2f) zoom=%.1f\n", camera_x, camera_y, zoom_level);
+                    printf("Camera: pos=(%.2f,%.2f) zoom=%.1f mode=%d\n", camera_x, camera_y, zoom_level, mode);
                 } else if (ev.key.keysym.sym == SDLK_DOWN) {
                     float pan_step = 0.05f * (2.0f / zoom_level);
                     camera_y += pan_step;
-                    printf("Camera: pos=(%.2f,%.2f) zoom=%.1f\n", camera_x, camera_y, zoom_level);
+                    printf("Camera: pos=(%.2f,%.2f) zoom=%.1f mode=%d\n", camera_x, camera_y, zoom_level, mode);
                 }
                 break;
 
@@ -1249,20 +1648,51 @@ int main() {
         // --- Update camera UBO ---
         if (camera_ubo != VK_NULL_HANDLE) {
             float aspect = (float)sw_extent.width / (float)sw_extent.height;
-            float visible_half_w = 2.0f / zoom_level;
-            float visible_half_h = visible_half_w / aspect;
+            glm::mat4 proj, view;
 
-            glm::mat4 proj = glm::ortho(
-                camera_x - visible_half_w,
-                camera_x + visible_half_w,
-                camera_y - visible_half_h,
-                camera_y + visible_half_h,
-                -1.0f, 1.0f
-            );
+            if (mode == 2) {
+                // 3D mode: perspective projection with tilt
+                float fov = 60.0f;
+                float near_plane = 0.1f;
+                float far_plane = 10000.0f;
+
+                proj = glm::perspective(
+                    glm::radians(fov),
+                    aspect,
+                    near_plane,
+                    far_plane
+                );
+
+                // View matrix: translate back and tilt
+                float tilt_rad = glm::radians(tilt_angle);
+                float cam_dist = 100.0f / zoom_level;
+                glm::vec3 cam_pos(
+                    camera_x,
+                    camera_y,
+                    cam_dist / std::cos(tilt_rad)
+                );
+                glm::vec3 look_at(camera_x, camera_y, 0.0f);
+                view = glm::lookAt(cam_pos, look_at, glm::vec3(0.0f, 1.0f, 0.0f));
+            } else {
+                // 2D mode: orthographic projection
+                float visible_half_w = 2.0f / zoom_level;
+                float visible_half_h = visible_half_w / aspect;
+
+                proj = glm::ortho(
+                    camera_x - visible_half_w,
+                    camera_x + visible_half_w,
+                    camera_y - visible_half_h,
+                    camera_y + visible_half_h,
+                    -1.0f, 1.0f
+                );
+
+                view = glm::mat4(1.0f);
+            }
 
             void* ubo_mapped;
-            vkMapMemory(device, camera_ubo_mem, 0, 64, 0, &ubo_mapped);
+            vkMapMemory(device, camera_ubo_mem, 0, 128, 0, &ubo_mapped);
             memcpy(ubo_mapped, &proj[0][0], 64);
+            memcpy(static_cast<char*>(ubo_mapped) + 64, &view[0][0], 64);
             vkUnmapMemory(device, camera_ubo_mem);
         }
 
@@ -1272,6 +1702,10 @@ int main() {
 
         uint32_t image_idx;
         VkResult acq = vkAcquireNextImageKHR(device, swapchain, UINT64_MAX, image_available, VK_NULL_HANDLE, &image_idx);
+        if (acq == VK_ERROR_OUT_OF_DATE_KHR) continue;
+
+        // --- Record command buffer ---
+        record_command_buffer(image_idx);
         if (acq == VK_ERROR_OUT_OF_DATE_KHR) continue;
 
         VkPipelineStageFlags wait_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;

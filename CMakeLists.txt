@@ -74,6 +74,8 @@ add_shader(map-renderer src/shaders/line.vert     src/shaders/line.vert.spv)
 add_shader(map-renderer src/shaders/line.frag     src/shaders/line.frag.spv)
 add_shader(map-renderer src/shaders/fill.vert     src/shaders/fill.vert.spv)
 add_shader(map-renderer src/shaders/fill.frag     src/shaders/fill.frag.spv)
+add_shader(map-renderer src/shaders/building.vert src/shaders/building.vert.spv)
+add_shader(map-renderer src/shaders/building.frag src/shaders/building.frag.spv)
 
 # Compiler flags
 target_compile_options(map-renderer PRIVATE

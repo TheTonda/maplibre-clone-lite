@@ -24,6 +24,8 @@ struct StyleRule {
     float line_color[3]   = {1.0f, 1.0f, 1.0f};
     float line_width      = 1.0f;
     float line_opacity    = 1.0f;
+    float extrude_color[3] = {0.6f, 0.58f, 0.55f}; // RGB 0-1 for fill-extrusion
+    float extrude_opacity  = 0.9f;
 };
 
 // ─── Internal layer representation ─────────────────────────────────
@@ -35,6 +37,8 @@ struct PaintProperties {
     std::optional<float>                 line_width;
     std::optional<float>                 line_opacity;
     std::optional<std::array<float, 3>> background_color;
+    std::optional<std::array<float, 3>> fill_extrusion_color;
+    std::optional<float>                 fill_extrusion_opacity;
 };
 
 struct StyleLayer {
@@ -83,13 +87,14 @@ public:
     }
 
     /// Match a style rule by layer name and geometry type string
-    /// ("fill", "line", "symbol", "background").
+    /// ("fill", "line", "symbol", "background", "fill-extrusion").
     /// Returns default gray if no match.
     StyleRule matchRule(const std::string& layer_name,
                         const std::string& geom_type) const {
         for (auto it = layers_.rbegin(); it != layers_.rend(); ++it) {
             if (it->id == layer_name || it->id == "*") {
-                if (it->type == geom_type || it->type == "background") {
+                if (it->type == geom_type || it->type == "background" ||
+                    it->type == "fill-extrusion") {
                     return buildRule(*it);
                 }
             }
@@ -157,6 +162,12 @@ private:
             rule.fill_color[1] = (*p.background_color)[1];
             rule.fill_color[2] = (*p.background_color)[2];
         }
+        if (p.fill_extrusion_color) {
+            rule.extrude_color[0] = (*p.fill_extrusion_color)[0];
+            rule.extrude_color[1] = (*p.fill_extrusion_color)[1];
+            rule.extrude_color[2] = (*p.fill_extrusion_color)[2];
+        }
+        if (p.fill_extrusion_opacity) rule.extrude_opacity = *p.fill_extrusion_opacity;
         return rule;
     }
 
@@ -251,18 +262,21 @@ private:
             skip_ws(ctx);
 
             if (key == "fill-color" || key == "line-color" ||
-                key == "background-color") {
+                key == "background-color" || key == "fill-extrusion-color") {
                 std::string color_str = parse_string(ctx);
                 auto color = parse_hex_color(color_str);
                 if (color) {
-                    if (key == "fill-color")       pp.fill_color       = color;
-                    else if (key == "line-color")  pp.line_color       = color;
-                    else                           pp.background_color = color;
+                    if (key == "fill-color")            pp.fill_color            = color;
+                    else if (key == "line-color")       pp.line_color            = color;
+                    else if (key == "background-color") pp.background_color      = color;
+                    else                                pp.fill_extrusion_color  = color;
                 }
             } else if (key == "fill-opacity" || key == "line-opacity") {
                 float val = static_cast<float>(parse_number(ctx));
                 if (key == "fill-opacity") pp.fill_opacity = val;
                 else                       pp.line_opacity = val;
+            } else if (key == "fill-extrusion-opacity") {
+                pp.fill_extrusion_opacity = static_cast<float>(parse_number(ctx));
             } else if (key == "line-width") {
                 pp.line_width = static_cast<float>(parse_number(ctx));
             } else {

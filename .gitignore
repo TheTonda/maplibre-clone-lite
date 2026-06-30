@@ -3,3 +3,5 @@ src/vulkan/
 src/vk_video/
 data/*.mvt
 data/*.pbf
+.opencode/
+node_modules/
