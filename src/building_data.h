@@ -9,9 +9,16 @@
 
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <vector>
 
 #include <glm/glm.hpp>
+
+#ifdef MAP_RENDERER_DEBUG
+#define DEBUG_LOG(...) std::printf("[DEBUG] " __VA_ARGS__); std::printf("\n")
+#else
+#define DEBUG_LOG(...) ((void)0)
+#endif
 
 namespace bldg {
 
@@ -40,6 +47,9 @@ inline void extrude_building(
     std::vector<uint32_t>& indices)
 {
     if (footprint.size() < 3) return;
+
+    DEBUG_LOG("extrude_building: footprint=%zu points, height=%.1f",
+              footprint.size(), height);
 
     const float y_top = height;
     const float y_bot = 0.0f;
@@ -101,6 +111,8 @@ inline BuildingBatch extract_buildings(const std::vector<osm::Building>& buildin
 
     for (const auto& b : buildings) {
         if (b.footprint.size() < 3) continue;
+        DEBUG_LOG("  extract: id=%lld, footprint=%zu, height=%.1f",
+                  (long long)b.id, b.footprint.size(), b.height);
         extrude_building(b.footprint, b.height, batch.vertices, batch.indices);
     }
 

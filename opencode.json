@@ -7,9 +7,9 @@
       "name": "Ornith Local",
       "options": {
         "baseURL": "http://127.0.0.1:8085/v1",
-        "timeout": 600000,
-        "headerTimeout": 180000,
-        "chunkTimeout": 120000
+        "timeout": 1800000,
+        "headerTimeout": 1800000,
+        "chunkTimeout": 900000
       },
       "models": {
         "ornith-35b": {

@@ -5,3 +5,5 @@ data/*.mvt
 data/*.pbf
 .opencode/
 node_modules/
+tools/__pycache__/
+*.pyc

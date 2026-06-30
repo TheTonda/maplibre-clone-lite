@@ -9,8 +9,15 @@
 
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <string>
 #include <vector>
+
+#ifdef MAP_RENDERER_DEBUG
+#define DEBUG_LOG(...) std::printf("[DEBUG] " __VA_ARGS__); std::printf("\n")
+#else
+#define DEBUG_LOG(...) ((void)0)
+#endif
 
 namespace render {
 
@@ -55,6 +62,7 @@ inline std::vector<LineSegment> decode_linestring_geometry(
     const std::vector<uint32_t>& geometry,
     uint32_t /*extent*/)
 {
+    DEBUG_LOG("decode_linestring: geometry size=%zu", geometry.size());
     std::vector<LineSegment> segments;
     LineSegment current;
     int32_t cx = 0, cy = 0;   // cursor
@@ -109,6 +117,7 @@ inline std::vector<LineSegment> decode_linestring_geometry(
         segments.push_back(std::move(current));
     }
 
+    DEBUG_LOG("decode_linestring: produced %zu segments", segments.size());
     return segments;
 }
 
@@ -144,6 +153,8 @@ inline LineBatch extract_lines(const mvt::Tile& tile,
 
                 // Append vertices (scale tile coords → clip space)
                 uint32_t base_idx = static_cast<uint32_t>(batch.vertices.size());
+                DEBUG_LOG("  extract_line: layer='%s', points=%zu, base_idx=%u",
+                          layer.name.c_str(), seg.points.size(), base_idx);
 
                 float inv_extent = 1.0f / static_cast<float>(layer.extent);
                 for (auto [x, y] : seg.points) {
@@ -165,6 +176,8 @@ inline LineBatch extract_lines(const mvt::Tile& tile,
         }
     }
 
+    DEBUG_LOG("extract_lines: total %zu vertices, %zu indices",
+              batch.vertices.size(), batch.indices.size());
     return batch;
 }
 

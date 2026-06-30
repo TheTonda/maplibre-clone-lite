@@ -12,6 +12,12 @@
 
 #include <google/protobuf/io/coded_stream.h>
 
+#ifdef MAP_RENDERER_DEBUG
+#define DEBUG_LOG(...) std::printf("[DEBUG] " __VA_ARGS__); std::printf("\n")
+#else
+#define DEBUG_LOG(...) ((void)0)
+#endif
+
 namespace mvt {
 
 // ─── Data structures ───────────────────────────────────────────────
@@ -348,6 +354,7 @@ inline const char* geom_type_name(GeomType t) {
 
 /// Print feature counts per layer.
 inline void print_summary(const Tile& tile) {
+    DEBUG_LOG("=== MVT Tile Summary ===");
     std::printf("=== MVT Tile Summary ===\n");
     std::printf("Total layers: %zu\n\n", tile.layers.size());
 

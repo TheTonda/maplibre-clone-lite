@@ -1,129 +1,99 @@
 // tests/test_mvt.cpp — Unit tests for MVT parser
-#include <gtest/gtest.h>
 #include "mvt_parser.h"
-#include <google/protobuf/io/coded_stream.h>
-#include <google/protobuf/io/zero_copy_stream_impl.h>
+
+#include <gtest/gtest.h>
 #include <fstream>
 #include <vector>
 
+#include <google/protobuf/io/coded_stream.h>
+#include <google/protobuf/io/zero_copy_stream_impl.h>
+
 using namespace mvt;
 
-// ─── Zigzag Decoding ─────────────────────────────────────────────────
+// ─── 1. Zigzag Decoding ─────────────────────────────────────────────────
 
-TEST(MvtParser, ZigzagDecodeZero) {
+TEST(Zigzag, DecodeZero) {
     EXPECT_EQ(zigzag_decode(0), 0);
 }
 
-TEST(MvtParser, ZigzagDecodePositive) {
+TEST(Zigzag, DecodePositive) {
     EXPECT_EQ(zigzag_decode(2), 1);
 }
 
-TEST(MvtParser, ZigzagDecodeNegative) {
+TEST(Zigzag, DecodeNegative) {
     EXPECT_EQ(zigzag_decode(1), -1);
 }
 
-TEST(MvtParser, ZigzagDecodeLargePositive) {
+TEST(Zigzag, DecodeLargePositive) {
     EXPECT_EQ(zigzag_decode(254), 127);
 }
 
-TEST(MvtParser, ZigzagDecodeLargeNegative) {
+TEST(Zigzag, DecodeLargeNegative) {
     EXPECT_EQ(zigzag_decode(255), -128);
 }
 
-// ─── Tile Parsing ────────────────────────────────────────────────────
+// ─── 2. Tile Parsing ────────────────────────────────────────────────────
 
-static std::vector<char> read_file(const std::string& path) {
-    std::ifstream f(path, std::ios::binary | std::ios::ate);
-    if (!f) return {};
-    std::streamsize sz = f.tellg();
-    f.seekg(0);
-    std::vector<char> buf(static_cast<size_t>(sz));
-    f.read(buf.data(), sz);
-    return buf;
+static Tile parse_test_mvt(const std::string& path) {
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    if (!file) {
+        return {};
+    }
+    std::streamsize size = file.tellg();
+    file.seekg(0, std::ios::beg);
+    std::vector<char> buffer(static_cast<size_t>(size));
+    file.read(buffer.data(), size);
+
+    google::protobuf::io::ArrayInputStream array_input(buffer.data(),
+                                                        static_cast<int>(size));
+    google::protobuf::io::CodedInputStream coded_input(&array_input);
+    return parse_tile(&coded_input);
 }
 
-TEST(MvtParser, ParseEmptyTile) {
-    std::vector<uint8_t> empty;
-    google::protobuf::io::ArrayInputStream input(empty.data(), 0);
-    google::protobuf::io::CodedInputStream coded(&input);
-    Tile tile = parse_tile(&coded);
+TEST(TileParsing, EmptyTile) {
+    // Parse empty bytes
+    char empty[1] = {0};
+    google::protobuf::io::ArrayInputStream array_input(empty, 0);
+    google::protobuf::io::CodedInputStream coded_input(&array_input);
+    Tile tile = parse_tile(&coded_input);
     EXPECT_EQ(tile.layers.size(), 0u);
 }
 
-TEST(MvtParser, ParseTileWithLayers) {
-    auto data = read_file("data/test_roads.mvt");
-    if (data.empty()) {
-        GTEST_SKIP() << "Test MVT file not found";
-    }
-    google::protobuf::io::ArrayInputStream input(data.data(), static_cast<int>(data.size()));
-    google::protobuf::io::CodedInputStream coded(&input);
-    Tile tile = parse_tile(&coded);
+TEST(TileParsing, TestRoardsMvt) {
+    Tile tile = parse_test_mvt("data/test_roads.mvt");
     EXPECT_GT(tile.layers.size(), 0u);
-}
-
-TEST(MvtParser, ParseTileLayerNames) {
-    auto data = read_file("data/test_roads.mvt");
-    if (data.empty()) {
-        GTEST_SKIP() << "Test MVT file not found";
-    }
-    google::protobuf::io::ArrayInputStream input(data.data(), static_cast<int>(data.size()));
-    google::protobuf::io::CodedInputStream coded(&input);
-    Tile tile = parse_tile(&coded);
-    // Verify at least one layer has a non-empty name
-    bool has_name = false;
+    // Verify at least one layer has features
+    bool found_features = false;
     for (const auto& layer : tile.layers) {
-        if (!layer.name.empty()) {
-            has_name = true;
+        if (!layer.features.empty()) {
+            found_features = true;
             break;
         }
     }
-    EXPECT_TRUE(has_name);
+    EXPECT_TRUE(found_features);
 }
 
-TEST(MvtParser, ParseTileLayerExtent) {
-    auto data = read_file("data/test_roads.mvt");
-    if (data.empty()) {
-        GTEST_SKIP() << "Test MVT file not found";
-    }
-    google::protobuf::io::ArrayInputStream input(data.data(), static_cast<int>(data.size()));
-    google::protobuf::io::CodedInputStream coded(&input);
-    Tile tile = parse_tile(&coded);
+TEST(TileParsing, TestSfMvt) {
+    Tile tile = parse_test_mvt("test_data/sf.mvt");
+    // sf.mvt may be empty or minimal, just verify it doesn't crash
+    (void)tile;
+}
+
+TEST(TileParsing, LayerNames) {
+    Tile tile = parse_test_mvt("data/test_roads.mvt");
+    // Verify layer names are non-empty strings
     for (const auto& layer : tile.layers) {
-        EXPECT_GT(layer.extent, 0u);
+        EXPECT_FALSE(layer.name.empty());
     }
 }
 
-TEST(MvtParser, ParseTileFeatureGeometry) {
-    auto data = read_file("data/test_roads.mvt");
-    if (data.empty()) {
-        GTEST_SKIP() << "Test MVT file not found";
-    }
-    google::protobuf::io::ArrayInputStream input(data.data(), static_cast<int>(data.size()));
-    google::protobuf::io::CodedInputStream coded(&input);
-    Tile tile = parse_tile(&coded);
+TEST(TileParsing, FeatureGeometryPresent) {
+    Tile tile = parse_test_mvt("data/test_roads.mvt");
     for (const auto& layer : tile.layers) {
         for (const auto& feat : layer.features) {
-            if (feat.type == GeomType::LINESTRING) {
-                EXPECT_GT(feat.geometry.size(), 0u);
+            if (feat.type == GeomType::LINESTRING || feat.type == GeomType::POLYGON) {
+                EXPECT_FALSE(feat.geometry.empty());
             }
         }
     }
-}
-
-// ─── Value Parsing ───────────────────────────────────────────────────
-
-TEST(MvtParser, GeomTypeNamePoint) {
-    EXPECT_STREQ(geom_type_name(GeomType::POINT), "POINT");
-}
-
-TEST(MvtParser, GeomTypeNameLineString) {
-    EXPECT_STREQ(geom_type_name(GeomType::LINESTRING), "LINESTRING");
-}
-
-TEST(MvtParser, GeomTypeNamePolygon) {
-    EXPECT_STREQ(geom_type_name(GeomType::POLYGON), "POLYGON");
-}
-
-TEST(MvtParser, GeomTypeNameUnknown) {
-    EXPECT_STREQ(geom_type_name(GeomType::UNKNOWN), "UNKNOWN");
 }

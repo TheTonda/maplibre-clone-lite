@@ -14,6 +14,12 @@
 #include <string>
 #include <vector>
 
+#ifdef MAP_RENDERER_DEBUG
+#define DEBUG_LOG(...) std::printf("[DEBUG] " __VA_ARGS__); std::printf("\n")
+#else
+#define DEBUG_LOG(...) ((void)0)
+#endif
+
 namespace style {
 
 // ─── StyleRule: material parameters for a matched layer ────────────
@@ -91,14 +97,18 @@ public:
     /// Returns default gray if no match.
     StyleRule matchRule(const std::string& layer_name,
                         const std::string& geom_type) const {
+        DEBUG_LOG("matchRule: layer='%s', type='%s', layers=%zu",
+                  layer_name.c_str(), geom_type.c_str(), layers_.size());
         for (auto it = layers_.rbegin(); it != layers_.rend(); ++it) {
             if (it->id == layer_name || it->id == "*") {
                 if (it->type == geom_type || it->type == "background" ||
                     it->type == "fill-extrusion") {
+                    DEBUG_LOG("  matched: id='%s' type='%s'", it->id.c_str(), it->type.c_str());
                     return buildRule(*it);
                 }
             }
         }
+        DEBUG_LOG("  no match, returning default");
         return StyleRule{};
     }
 

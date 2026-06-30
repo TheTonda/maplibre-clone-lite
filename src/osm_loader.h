@@ -11,6 +11,12 @@
 #include <string>
 #include <vector>
 
+#ifdef MAP_RENDERER_DEBUG
+#define DEBUG_LOG(...) std::printf("[DEBUG] " __VA_ARGS__); std::printf("\n")
+#else
+#define DEBUG_LOG(...) ((void)0)
+#endif
+
 namespace osm {
 
 // ─── Simple JSON tokenizer and parser ──────────────────────────────────
@@ -410,6 +416,11 @@ inline OSMData load_osm_json(const std::string& path, double world_width = 65536
            "%zu water lines, %zu landuse\n",
            data.buildings.size(), data.roads.size(), data.parks.size(),
            data.water_polygons.size(), data.water_lines.size(), data.landuse.size());
+
+    DEBUG_LOG("osm_loader: buildings=%zu, roads=%zu, parks=%zu, water_poly=%zu, "
+              "water_lines=%zu, landuse=%zu",
+              data.buildings.size(), data.roads.size(), data.parks.size(),
+              data.water_polygons.size(), data.water_lines.size(), data.landuse.size());
 
     return data;
 }

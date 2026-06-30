@@ -5,6 +5,49 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# ─── Unit Tests ───────────────────────────────────────────────────────────
+find_package(GTest QUIET)
+if(NOT GTest_FOUND)
+    find_package(GTest REQUIRED)
+endif()
+
+enable_testing()
+
+# Test executable
+add_executable(map-renderer-tests
+    tests/test_main.cpp
+    tests/test_json.cpp
+    tests/test_style.cpp
+    tests/test_mvt.cpp
+    tests/test_render.cpp
+    tests/test_osm.cpp
+    tests/test_building.cpp
+    tests/test_renderer.cpp
+    tests/test_integration.cpp
+)
+
+target_include_directories(map-renderer-tests PRIVATE src/)
+target_link_libraries(map-renderer-tests PRIVATE
+    GTest::gtest
+    GTest::gtest_main
+    protobuf::libprotobuf
+    ${GLM_LIBRARIES}
+)
+
+target_compile_definitions(map-renderer-tests PRIVATE MAP_RENDERER_DEBUG)
+target_compile_options(map-renderer-tests PRIVATE
+    -Wall -Wextra -Wpedantic
+    -O2
+)
+
+add_test(NAME all_tests COMMAND map-renderer-tests)
+
+# Python tests
+add_test(NAME python_tests
+    COMMAND python3 ${CMAKE_SOURCE_DIR}/tests/test_python_extractor.py
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
+
 # Dependencies
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(VULKAN REQUIRED vulkan)
