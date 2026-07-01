@@ -9,6 +9,9 @@
 #include "render/renderer.h"
 #include "data/geometry_builder.h"
 
+#include <cstdio>
+#include <string>
+
 /// C-style callback for VulkanContext::submit_frame.
 static void record_draw_callback(VkCommandBuffer cmd, void* user_data) {
     Renderer* renderer = static_cast<Renderer*>(user_data);
@@ -42,14 +45,34 @@ int main() {
 
     float aspect = static_cast<float>(WIDTH) / static_cast<float>(HEIGHT);
 
+    // ---- FPS tracking ----
+    uint32_t frame_count  = 0;
+    uint32_t fps_tick     = SDL_GetTicks64();
+    constexpr uint32_t FPS_INTERVAL = 1000;  // ms
+
     // Main loop
     while (!window.should_close()) {
         window.poll_events(input_state);
+
+        // Handle window resize
+        if (window.was_resized()) {
+            vk_ctx.recreate_swapchain(window);
+            window.reset_resized();
+
+            // Update descriptor sets with new buffers? No — the camera UBO
+            // and geometry buffers stay the same.  Only swapchain-dependent
+            // resources (framebuffers, render pass) were recreated.
+            aspect = static_cast<float>(window.get_width()) /
+                     static_cast<float>(window.get_height());
+        }
+
         camera.update_from_input(input_state);
 
         // Acquire the next swapchain image
         uint32_t image_index = vk_ctx.acquire_next_image();
         if (image_index == ~0u) {
+            // Swapchain out of date — recreate and skip this frame
+            vk_ctx.recreate_swapchain(window);
             input_state.reset_frame_state();
             continue;
         }
@@ -61,6 +84,20 @@ int main() {
         vk_ctx.submit_frame(image_index, record_draw_callback, &renderer);
 
         input_state.reset_frame_state();
+
+        // ---- FPS counter ----
+        frame_count++;
+        uint32_t now = SDL_GetTicks64();
+        if (now - fps_tick >= FPS_INTERVAL) {
+            float fps = static_cast<float>(frame_count) * 1000.0f /
+                        static_cast<float>(now - fps_tick);
+            char title[128];
+            std::snprintf(title, sizeof(title),
+                          "Map Renderer — %.0f FPS", fps);
+            window.set_title(title);
+            frame_count = 0;
+            fps_tick    = now;
+        }
     }
 
     vk_ctx.cleanup();

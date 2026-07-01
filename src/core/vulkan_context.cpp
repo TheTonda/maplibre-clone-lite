@@ -904,6 +904,52 @@ uint32_t VulkanContext::acquire_next_image() {
     return image_index;
 }
 
+// -----------------------------------------------------------------------
+// Swapchain recreation (after window resize)
+// -----------------------------------------------------------------------
+
+void VulkanContext::recreate_swapchain(Window& window) {
+    vkDeviceWaitIdle(device_);
+
+    // Destroy depth resources
+    if (depth_image_view_ != VK_NULL_HANDLE)
+        vkDestroyImageView(device_, depth_image_view_, nullptr);
+    if (depth_image_ != VK_NULL_HANDLE)
+        vkDestroyImage(device_, depth_image_, nullptr);
+    if (depth_image_memory_ != VK_NULL_HANDLE)
+        vkFreeMemory(device_, depth_image_memory_, nullptr);
+
+    // Destroy render pass
+    if (render_pass_ != VK_NULL_HANDLE)
+        vkDestroyRenderPass(device_, render_pass_, nullptr);
+
+    // Destroy framebuffers
+    for (auto fb : framebuffers_)
+        vkDestroyFramebuffer(device_, fb, nullptr);
+    framebuffers_.clear();
+
+    // Destroy image views
+    for (auto iv : swapchain_image_views_)
+        vkDestroyImageView(device_, iv, nullptr);
+    swapchain_image_views_.clear();
+
+    // Destroy old swapchain
+    if (swapchain_ != VK_NULL_HANDLE)
+        vkDestroySwapchainKHR(device_, swapchain_, nullptr);
+
+    // Update surface from window (surface may have been recreated by SDL)
+    surface_ = window.get_surface();
+    extent_  = { static_cast<uint32_t>(window.get_width()),
+                 static_cast<uint32_t>(window.get_height()) };
+
+    // Re-create swapchain (no old swapchain handle for simplicity)
+    create_swapchain();
+    create_image_views();
+    create_depth_resources();
+    create_render_pass();
+    create_framebuffers();
+}
+
 void VulkanContext::submit_frame(uint32_t image_index,
                                    void (*record_fn)(VkCommandBuffer, void*),
                                    void* user_data) {

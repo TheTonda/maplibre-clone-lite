@@ -28,6 +28,15 @@ public:
     /// @return true when the user has requested the window to close.
     bool should_close() const { return should_close_; }
 
+    /// @return true if the window was resized since the last poll.
+    bool was_resized() const { return resized_; }
+
+    /// Reset the resize flag (call after handling the resize).
+    void reset_resized() { resized_ = false; }
+
+    /// Set a new window title (e.g. for FPS display).
+    void set_title(const std::string& title);
+
     /// Programmatically request a close.
     void close() { should_close_ = true; }
 
@@ -43,6 +52,7 @@ private:
     VkSurfaceKHR   surface_  = VK_NULL_HANDLE;
     int            width_    = 0;
     int            height_   = 0;
+    bool           resized_  = false;
     bool           should_close_ = false;
 
     // Cursor tracking for mouse deltas

@@ -51,6 +51,10 @@ public:
     /// Current frame-in-flight index (0 or 1).
     uint32_t get_current_frame() const { return current_frame_; }
 
+    /// Recreate the swapchain and all dependent resources (framebuffers,
+    /// depth image, image views) after a window resize.
+    void recreate_swapchain(Window& window);
+
     /// Allocate a command buffer from the pool.
     VkCommandBuffer allocate_command_buffer() const;
 

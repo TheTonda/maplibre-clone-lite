@@ -12,6 +12,7 @@
 Window::Window(const std::string& title, int width, int height)
     : width_(width)
     , height_(height)
+    , resized_(false)
 {
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS) != 0) {
         std::fprintf(stderr, "[ERROR] SDL_Init failed: %s\n", SDL_GetError());
@@ -61,6 +62,10 @@ Window::~Window() {
 // Event Polling
 // -----------------------------------------------------------------------
 
+void Window::set_title(const std::string& title) {
+    SDL_SetWindowTitle(window_, title.c_str());
+}
+
 void Window::poll_events(InputState& state) {
     // --- Frame timing ---
     uint64_t now  = SDL_GetTicks64();
@@ -76,6 +81,15 @@ void Window::poll_events(InputState& state) {
         // -- Window close --
         case SDL_QUIT:
             should_close_ = true;
+            break;
+
+        // -- Window resize --
+        case SDL_WINDOWEVENT:
+            if (ev.window.event == SDL_WINDOWEVENT_RESIZED) {
+                width_  = ev.window.data1;
+                height_ = ev.window.data2;
+                resized_ = true;
+            }
             break;
 
         // -- Keyboard --
