@@ -26,7 +26,12 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 find_package(Vulkan REQUIRED)
 find_package(SDL2 REQUIRED)
 find_package(glm REQUIRED)
-find_package(Protobuf REQUIRED)
+
+# Protobuf via pkg-config (correctly brings in all absl transitive deps)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(PROTOBUF REQUIRED IMPORTED_TARGET protobuf)
+pkg_check_modules(ABSL_DEPS    REQUIRED IMPORTED_TARGET protobuf)
+
 find_package(GTest REQUIRED)
 
 # ---------------------------------------------------------------------------
@@ -41,17 +46,22 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(nlohmann_json)
 
 # ---------------------------------------------------------------------------
-# Protobuf Code Generation
+# Protobuf Code Generation (using protoc from system)
 # ---------------------------------------------------------------------------
-protobuf_generate_cpp(PROTO_SRCS PROTO_HDRS src/proto/osm_data.proto)
+find_program(PROTOC protoc REQUIRED)
+set(PROTO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/src/proto/osm_data.proto)
+set(PROTO_SRC  ${CMAKE_CURRENT_BINARY_DIR}/osm_data.pb.cc)
+set(PROTO_HDR  ${CMAKE_CURRENT_BINARY_DIR}/osm_data.pb.h)
 
-# ---------------------------------------------------------------------------
-# Shader Compilation
-# ---------------------------------------------------------------------------
-# Shaders will be compiled by a helper script called from CMake when the
-# shader files exist.  For now this section is a placeholder.
-file(GLOB SHADER_SRCS src/shaders/2d/*.vert src/shaders/2d/*.frag
-                      src/shaders/3d/*.vert src/shaders/3d/*.frag)
+add_custom_command(
+  OUTPUT ${PROTO_SRC} ${PROTO_HDR}
+  COMMAND ${PROTOC}
+    --proto_path=${CMAKE_CURRENT_SOURCE_DIR}/src/proto
+    --cpp_out=${CMAKE_CURRENT_BINARY_DIR}
+    ${PROTO_FILE}
+  DEPENDS ${PROTO_FILE}
+  COMMENT "Generating protobuf sources..."
+)
 
 # ---------------------------------------------------------------------------
 # Core Library
@@ -60,9 +70,9 @@ file(GLOB_RECURSE CORE_SRCS
   src/core/*.cpp
   src/data/*.cpp
   src/graphics/*.cpp
-  ${PROTO_SRCS}
+  ${PROTO_SRC}
 )
-add_library(map-renderer-lib STATIC ${CORE_SRCS} ${PROTO_HDRS})
+add_library(map-renderer-lib SHARED ${CORE_SRCS} ${PROTO_HDR})
 target_include_directories(map-renderer-lib
   PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -74,7 +84,7 @@ target_link_libraries(map-renderer-lib
     Vulkan::Vulkan
     SDL2::SDL2
     glm::glm
-    protobuf::libprotobuf
+    PkgConfig::PROTOBUF
     nlohmann_json::nlohmann_json
 )
 target_compile_features(map-renderer-lib PUBLIC cxx_std_23)
@@ -95,6 +105,7 @@ target_link_libraries(map-renderer-tests
   PRIVATE
     map-renderer-lib
     GTest::gtest_main
+    PkgConfig::ABSL_DEPS
 )
 target_compile_features(map-renderer-tests PRIVATE cxx_std_23)
 

@@ -1,0 +1,43 @@
+[
+  {
+    "type": "building",
+    "fill_color": [217, 195, 165, 255],
+    "fill_extrusion_height": 1.0
+  },
+  {
+    "type": "road_primary",
+    "line_color": [254, 254, 254, 255],
+    "line_width_meters": 8.0
+  },
+  {
+    "type": "road_secondary",
+    "line_color": [244, 244, 244, 255],
+    "line_width_meters": 6.0
+  },
+  {
+    "type": "road_residential",
+    "line_color": [230, 230, 230, 255],
+    "line_width_meters": 4.0
+  },
+  {
+    "type": "road_service",
+    "line_color": [200, 200, 200, 255],
+    "line_width_meters": 3.0
+  },
+  {
+    "type": "water",
+    "fill_color": [77, 141, 201, 255]
+  },
+  {
+    "type": "park",
+    "fill_color": [143, 186, 127, 255]
+  },
+  {
+    "type": "landuse",
+    "fill_color": [232, 224, 216, 255]
+  },
+  {
+    "type": "ground",
+    "fill_color": [30, 30, 32, 255]
+  }
+]
