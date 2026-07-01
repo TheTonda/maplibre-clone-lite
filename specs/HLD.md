@@ -1,9 +1,9 @@
 # High-Level Design (HLD) Specification
 ## Interactive 3D Map Renderer
 
-**Version:** 1.0  
+**Version:** 1.1  
 **Date:** July 2, 2026  
-**Status:** Specification - Ready for Review
+**Status:** Specification - Optimized after review
 
 ---
 
@@ -16,7 +16,7 @@ This document describes the high-level architecture of an interactive 3D map ren
 - Support interactive 2D and 3D camera with pan, zoom, and tilt
 - Achieve 30+ FPS with 40,000+ buildings on modern GPU
 - Clean, maintainable codebase with comprehensive tests
-- Cross-platform support (Linux, Windows, macOS)
+- Linux primary target; architect for future Android support
 
 ### 1.2 Non-Goals
 - Real-time data updates
@@ -25,6 +25,7 @@ This document describes the high-level architecture of an interactive 3D map ren
 - Building interior rendering
 - Routing/navigation
 - Offline tile caching
+- Windows and macOS v1.0 support
 
 ---
 
@@ -35,24 +36,27 @@ This document describes the high-level architecture of an interactive 3D map ren
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                      Application Layer                       │
-│  (Main loop, event handling, camera control)                │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐                  │
+│  │ Window   │  │ Input    │  │ Camera   │                  │
+│  │ Manager  │  │ State    │  │ System   │                  │
+│  └──────────┘  └──────────┘  └──────────┘                  │
 └────────────────────┬────────────────────────────────────────┘
-                     │
+                      │
 ┌────────────────────┴────────────────────────────────────────┐
 │                      Renderer Layer                          │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  │
 │  │ 2D Path  │  │ 3D Path  │  │ Buildings│  │ Features │  │
 │  └──────────┘  └──────────┘  └──────────┘  └──────────┘  │
 └────────────────────┬────────────────────────────────────────┘
-                     │
+                      │
 ┌────────────────────┴────────────────────────────────────────┐
 │                      Data Layer                              │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  │
-│  │ OSM      │  │ Geometry │  │ Style    │  │ Camera   │  │
-│  │ Loader   │  │ Builder  │  │ Engine   │  │ System   │  │
-│  └──────────┘  └──────────┘  └──────────┘  └──────────┘  │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐                  │
+│  │ OSM      │  │ Geometry │  │ Style    │                  │
+│  │ Loader   │  │ Builder  │  │ Engine   │                  │
+│  └──────────┘  └──────────┘  └──────────┘                  │
 └────────────────────┬────────────────────────────────────────┘
-                     │
+                      │
 ┌────────────────────┴────────────────────────────────────────┐
 │                    Graphics Layer                            │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  │
@@ -67,8 +71,9 @@ This document describes the high-level architecture of an interactive 3D map ren
 #### Application Layer
 - SDL window management
 - Event handling (keyboard, mouse)
+- Input state tracking
+- Camera system (state, matrices, constraints)
 - Main render loop
-- Camera input processing
 - FPS counter and statistics
 
 #### Renderer Layer
@@ -78,10 +83,10 @@ This document describes the high-level architecture of an interactive 3D map ren
 - Implements 2D and 3D rendering paths
 
 #### Data Layer
-- Loads OSM data from JSON
+- Loads OSM data from protobuf
 - Builds 3D geometry from 2D footprints
 - Parses style definitions
-- Manages camera state and transformations
+- Applies building height fallback rules
 
 #### Graphics Layer
 - Vulkan API abstraction
@@ -96,9 +101,9 @@ OSM PBF File
     ↓
 Python Preprocessor (extract_geometry.py)
     ↓
-JSON File (osm_data.json)
+Protobuf File (osm_data.bin)
     ↓
-OSM Loader (C++)
+OSM Loader (C++) using protobuf C++ runtime
     ↓
 Geometry Builder (C++)
     ↓
@@ -115,34 +120,55 @@ Framebuffer → Display
 
 ### 3.1 Core Technologies
 - **Language:** C++23
-- **Graphics API:** Vulkan 1.3
+- **Graphics API:** Vulkan 1.2
 - **Window System:** SDL2
 - **Math Library:** GLM
 - **Build System:** CMake 3.20+
 - **Test Framework:** Google Test (C++), unittest (Python)
+- **Serialization:** protobuf (preprocessed OSM data)
+- **Configuration/Style:** nlohmann/json (header-only, style definitions)
 
 ### 3.2 External Dependencies
 - Vulkan SDK
 - SDL2 development libraries
 - GLM headers
 - Google Test
+- protobuf C++ runtime and protoc
+- nlohmann/json (header-only)
 - Python 3.8+ (for OSM preprocessing)
-- osmium library (Python)
+- Python protobuf package and osmium (or equivalent)
 
 ### 3.3 Supported Platforms
-- Linux (primary)
-- Windows (secondary)
-- macOS (best effort, may require MoltenVK)
+- Linux (primary target for v1.0)
+- Android (architect for future; use ANativeWindow/SDL Android support)
+- Windows and macOS explicitly out of scope for v1.0
 
 ---
 
 ## 4. Key Subsystems
 
 ### 4.1 Coordinate System
-- **Input:** WGS84 lat/lon (degrees)
-- **Storage:** Mercator projection (0-65,536 range)
-- **Rendering:** Normalized meters relative to data center
-- **Conversion:** Done in OSM loader
+
+The renderer uses a single, consistent coordinate space so that 2D and 3D modes share the same data and camera math.
+
+- **Input:** WGS84 lat/lon (degrees) from OSM
+- **Preprocessing:** Convert WGS84 to a local East-North-Up (ENU) Cartesian frame centered on the dataset center
+- **Storage:** Local ENU meters relative to data center (`x` east, `y` up, `z` north)
+- **Rendering:** Same local ENU meters; no further runtime reprojection
+
+**Why ENU meters?**
+- Building heights and road widths are expressed in real-world meters. Keeping x/z in meters means extruded buildings have physically correct proportions anywhere on Earth, without latitude-dependent scale distortion.
+- The camera can use intuitive units: zoom “show 200 m”, distance “500 m from look-at”, tilt in degrees.
+- 2D orthographic and 3D perspective share the same world-space origin and axes.
+
+**Conversion formula (Python preprocessor):**
+```python
+lat0, lon0 = dataset_center_latitude, dataset_center_longitude
+R = 6371000.0  # Earth radius in meters
+x = R * cos(radians(lat0)) * radians(lon - lon0)
+z = R * radians(lat - lat0)
+```
+The loader receives `(x, z)` in meters and stores them directly. `y` is generated by the geometry builder (0 for ground, height for building tops).
 
 ### 4.2 Camera System
 - **2D Mode:** Orthographic projection, pan/zoom
@@ -168,13 +194,20 @@ Framebuffer → Display
 ### 4.4 Data Structures
 
 #### Building
-- Footprint (polygon)
+- Footprint (polygon in local ENU meters)
 - Height (meters)
+- Height source (`tag`, `levels`, or `default`)
 - Optional: color, type
 
+**Height fallback policy:**
+1. Use `height` tag when present and parseable.
+2. Else use `building:levels` tag × default floor height (3.0 m).
+3. Else use a configurable default height (9.0 m for generic buildings).
+
 #### Road
-- Line string
+- Line string (in local ENU meters)
 - Optional: width, type
+- Default width: 6.0 m if no OSM width tag
 
 #### Feature (Park/Water/Landuse)
 - Polygon
@@ -201,6 +234,7 @@ Framebuffer → Display
 - Distance-based LOD (future)
 - Batch rendering by material
 - Minimize draw calls
+- Render roads as quads instead of relying on Vulkan line width
 
 ---
 
@@ -221,7 +255,8 @@ Framebuffer → Display
 ### 6.3 Continuous Integration
 - All tests must pass before commit
 - Build must succeed on Linux
-- No memory leaks (Valgrind clean)
+- No memory leaks detected by AddressSanitizer / LeakSanitizer
+- Valgrind as a best-effort additional check (Vulkan driver allocations may produce false positives)
 
 ---
 
@@ -296,10 +331,10 @@ The project is successful when:
 
 ## 10. Open Questions
 
-1. Should we support multiple style layers with z-ordering?
-2. Do we need support for custom shaders?
-3. Should we implement building shadows?
-4. Do we need support for terrain elevation?
-5. Should we support MVT (Mapbox Vector Tiles) format?
+1. Should we support multiple style layers with z-ordering? *(Answer: not in v1.0)*
+2. Do we need support for custom shaders? *(Answer: not in v1.0, but design for it)*
+3. Should we implement building shadows? *(Answer: not in v1.0)*
+4. Do we need support for terrain elevation? *(Answer: not in v1.0)*
+5. Should we support MVT (Mapbox Vector Tiles) format? *(Answer: not in v1.0)*
 
 These questions will be addressed in the Low-Level Design document.

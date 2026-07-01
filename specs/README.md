@@ -11,17 +11,17 @@ System architecture, component overview, technology stack, and development phase
 Detailed module specifications, interfaces, data structures, and implementation details.
 
 ### 3. [REQUIREMENTS.md](REQUIREMENTS.md) - Requirements
-Functional and non-functional requirements, constraints, and acceptance criteria.
+Functional and non-functional requirements, constraints, acceptance criteria, and debug-logging policy.
 
 ### 4. [TASKS.md](TASKS.md) - Task Breakdown
-Detailed task and subtask breakdown with time estimates and dependencies.
+Detailed task and subtask breakdown with time estimates, dependencies, and Definition of Done.
 
 ## Specification Status
 
-- ✅ HLD - Complete
-- ✅ LLD - Complete
-- ✅ Requirements - Complete
-- ✅ Tasks - Complete
+- ✅ HLD - Reviewed and optimized
+- ✅ LLD - Reviewed and optimized
+- ✅ Requirements - Reviewed and optimized
+- ✅ Tasks - Reviewed and optimized
 
 ## Next Steps
 
@@ -34,6 +34,16 @@ The specifications are ready for review. Once approved, implementation can begin
 3. **Traceable** - Requirements link to tasks
 4. **Maintainable** - Easy to update as project evolves
 5. **Complete** - Covers all aspects of the system
+
+## Key Decisions Captured in This Specification
+
+- **Protobuf** is used for the preprocessed OSM geometry payload.
+- **nlohmann/json** is approved for style/configuration parsing.
+- **Local ENU meters** are the single runtime coordinate space.
+- **Linux** is the v1.0 target; Android support is planned, Windows/macOS deferred.
+- **Roads are rendered as quads**, not Vulkan lines, for portability.
+- **Per-frame-in-flight Vulkan synchronization** is required.
+- **DEBUG_LOG** macro must be available when `MAP_RENDERER_DEBUG` is defined.
 
 ## Specification-Driven Development
 

@@ -1,9 +1,9 @@
 # Requirements Specification
 ## Interactive 3D Map Renderer
 
-**Version:** 1.0  
+**Version:** 1.1  
 **Date:** July 2, 2026  
-**Status:** Specification - Ready for Review
+**Status:** Specification - Optimized after review
 
 ---
 
@@ -13,89 +13,109 @@
 
 **FR-1.1: OSM Data Loading**
 - **Priority:** High
-- **Description:** System shall load OpenStreetMap data from JSON files
-- **Input:** JSON file path (data/osm_data.json)
+- **Description:** System shall load OpenStreetMap data from protobuf files
+- **Input:** Protobuf file path (data/osm_data.bin)
 - **Output:** In-memory OSM data structure
 - **Acceptance Criteria:**
   - Successfully loads buildings, roads, parks, water, landuse
-  - Parses JSON without errors
+  - Deserializes protobuf without errors
   - Computes bounds and center
   - Handles missing fields gracefully
+  - Protobuf schema version checked and mismatches reported
 
 **FR-1.2: Coordinate Conversion**
 - **Priority:** High
-- **Description:** System shall convert Mercator coordinates to normalized meters
-- **Input:** Mercator coordinates (0-65536 range)
-- **Output:** Meters relative to data center
+- **Description:** System shall convert WGS84 lat/lon to local ENU meters centered on the dataset
+- **Input:** WGS84 latitude/longitude (degrees)
+- **Output:** Local ENU meters (x=east, z=north) relative to data center
 - **Acceptance Criteria:**
-  - All coordinates normalized to (0, 0) center
-  - Preserves relative positions
-  - Tested with known reference points
+  - All coordinates converted to true meters
+  - Building heights and road widths remain physically consistent
+  - Tested with known reference points at multiple latitudes
 
 **FR-1.3: Style Definition**
 - **Priority:** High
-- **Description:** System shall load style definitions from JSON
+- **Description:** System shall load style definitions from JSON using nlohmann/json
 - **Input:** Style JSON file (data/style.json)
 - **Output:** Style rules in memory
 - **Acceptance Criteria:**
   - Loads colors for buildings, roads, parks, water
   - Supports fill, line, fill-extrusion layer types
   - Provides default colors if style missing
+  - Invalid style JSON falls back to built-in defaults with a warning
+
+**FR-1.4: Building Height Fallback**
+- **Priority:** High
+- **Description:** System shall determine building height using a fallback chain
+- **Input:** OSM tags for a building
+- **Output:** Height in meters and the source of the value
+- **Fallback Chain:**
+  1. Use `height` tag if present and valid
+  2. Else use `building:levels` × 3.0 m if present
+  3. Else use configurable default (9.0 m)
+- **Acceptance Criteria:**
+  - Every building has a positive height
+  - Height source recorded for debugging
 
 ### 1.2 Geometry Generation
 
 **FR-2.1: Building Extrusion**
 - **Priority:** High
-- **Description:** System shall convert 2D building footprints to 3D boxes
-- **Input:** Building footprint (polygon) and height
+- **Description:** System shall convert 2D building footprints to 3D meshes
+- **Input:** Building footprint (polygon) and height in meters
 - **Output:** 3D mesh with proper normals
 - **Acceptance Criteria:**
-  - Generates top, bottom, and side faces
+  - Generates top and side faces (bottom optional, hidden by ground)
   - Each face has correct normal vector
   - Winding order correct for backface culling
   - Triangulated for GPU rendering
 
 **FR-2.2: Polygon Triangulation**
 - **Priority:** High
-- **Description:** System shall triangulate polygons for rendering
+- **Description:** System shall triangulate simple polygons for rendering
 - **Input:** Polygon (list of points)
 - **Output:** Triangle indices
 - **Acceptance Criteria:**
-  - Fan triangulation for convex polygons
-  - Correct winding order
-  - Handles 3+ point polygons
+  - Ear-clipping triangulation for simple polygons
+  - Correct counter-clockwise winding order
+  - Handles concave polygons
+  - Polygons with holes explicitly out of scope for v1.0
 
-**FR-2.3: Line Geometry**
+**FR-2.3: Road Geometry**
 - **Priority:** Medium
-- **Description:** System shall convert road lines to GPU geometry
-- **Input:** Road line (list of points)
-- **Output:** Line strip vertices
+- **Description:** System shall convert road lines to GPU quads
+- **Input:** Road line (list of points) and width in meters
+- **Output:** Triangle mesh quads
 - **Acceptance Criteria:**
   - Preserves order of points
   - Handles disconnected segments
+  - Width expressed in real-world meters
+  - Does not rely on Vulkan `wideLines` feature
 
 ### 1.3 Camera System
 
 **FR-3.1: 2D Camera**
 - **Priority:** High
 - **Description:** System shall provide orthographic 2D camera
-- **Input:** Position (x, y), zoom level
+- **Input:** Look-at point (x, z), zoom level
 - **Output:** Projection and view matrices
 - **Acceptance Criteria:**
-  - Zoom range: 0.1x to 20x
-  - Pan in normalized meters
+  - Zoom range: 0.1x to 20x, where 1.0x frames the full dataset extent
+  - Pan in local ENU meters
   - Smooth transitions
+  - Aspect ratio preserved
 
 **FR-3.2: 3D Camera**
 - **Priority:** High
 - **Description:** System shall provide perspective 3D camera
-- **Input:** Position, distance, tilt, rotation
+- **Input:** Look-at point, distance, tilt, rotation
 - **Output:** Projection and view matrices
 - **Acceptance Criteria:**
   - Tilt range: 0° to 85°
   - Distance range: 50m to 5000m
   - Full 360° rotation
-  - Camera always looks at data center
+  - Camera always looks at the current look-at point (preserved from 2D mode)
+  - Up vector stays +Y; no gimbal lock within clamped tilt range
 
 **FR-3.3: Camera Mode Switching**
 - **Priority:** High
@@ -118,8 +138,9 @@
   - A/D: Rotate
 - **Acceptance Criteria:**
   - Smooth, responsive controls
-  - Pan speed proportional to zoom
-  - Zoom clamped to valid range
+  - Pan speed proportional to zoom/distance
+  - Zoom/distance clamped to valid range
+  - Tilt and rotation clamped to valid range
 
 ### 1.4 Rendering
 
@@ -145,6 +166,7 @@
   - Depth testing enabled
   - Per-vertex lighting
   - Correct render order (ground → features → buildings)
+  - Features and roads rendered slightly above y=0 to avoid z-fighting (e.g., polygon offset or small y bias)
 
 **FR-4.3: Building Lighting**
 - **Priority:** Medium
@@ -161,9 +183,9 @@
 - **Description:** System shall render grid pattern on ground
 - **Output:** Ground with grid lines
 - **Acceptance Criteria:**
-  - Grid every 50 meters
+  - Grid every 50 meters (or configurable)
   - Subtle, non-distracting
-  - Anti-aliased lines
+  - Anti-aliased via shader derivatives (`fwidth`)
 
 ### 1.5 Input Handling
 
@@ -237,10 +259,11 @@
 - **Priority:** High
 - **Description:** Code shall follow C++ Core Guidelines
 - **Acceptance Criteria:**
-  - No compiler warnings with -Wall -Wextra
+  - No compiler warnings with -Wall -Wextra -Wpedantic
   - Consistent formatting
   - Meaningful variable names
   - Functions < 50 lines
+  - `DEBUG_LOG` macro available when `MAP_RENDERER_DEBUG` is defined
 
 **NFR-1.2: Documentation**
 - **Priority:** High
@@ -254,20 +277,23 @@
 - **Priority:** High
 - **Description:** System shall have comprehensive tests
 - **Acceptance Criteria:**
-  - 80%+ code coverage
+  - 80%+ code coverage for non-Vulkan logic
   - All public APIs tested
   - Edge cases covered
   - All tests pass
+  - Memory correctness checked with AddressSanitizer / LeakSanitizer
 
 ### 2.2 Portability
 
 **NFR-2.1: Cross-Platform**
 - **Priority:** Medium
-- **Description:** Code shall compile on Linux, Windows, macOS
+- **Description:** Code shall compile on Linux v1.0 and be architected for Android
 - **Acceptance Criteria:**
-  - Builds on Linux (primary)
-  - Builds on Windows (secondary)
-  - Builds on macOS (best effort)
+  - Builds and runs on Linux (primary target)
+  - Platform abstractions are isolated (window creation, input, filesystem)
+  - No Linux-specific code in shared rendering/math modules
+  - Android support explicitly planned for v1.1
+  - Windows and macOS out of scope for v1.0
 
 **NFR-2.2: Compiler Support**
 - **Priority:** High
@@ -310,9 +336,10 @@
 - **Priority:** High
 - **Description:** System shall properly manage resources
 - **Acceptance Criteria:**
-  - No memory leaks (Valgrind clean)
-  - Proper Vulkan cleanup
+  - No memory leaks detected by AddressSanitizer / LeakSanitizer
+  - Proper Vulkan cleanup (no validation-layer resource leaks)
   - RAII for all resources
+  - Valgrind may be used as a best-effort supplementary check
 
 ### 2.5 Usability
 
@@ -337,18 +364,21 @@
 
 ### 3.1 Technical Constraints
 
-**TC-1:** Must use Vulkan 1.2+ (for modern features)
+**TC-1:** Must use Vulkan 1.2+ (for modern features and broader compatibility)
 **TC-2:** Must use C++23 (for modern language features)
 **TC-3:** Must use SDL2 (for window management)
 **TC-4:** Must use GLM (for math)
 **TC-5:** Must use CMake 3.20+ (for build system)
 **TC-6:** Must support Linux as primary platform
+**TC-7:** Must use protobuf for preprocessed OSM data
+**TC-8:** May use header-only nlohmann/json for style/configuration parsing
+**TC-9:** May use Google Test, AddressSanitizer, and other quality tools
 
 ### 3.2 Resource Constraints
 
 **RC-1:** GPU memory limit: 500MB
 **RC-2:** System memory limit: 200MB
-**RC-3:** No external runtime dependencies beyond standard libraries
+**RC-3:** No unnecessary runtime dependencies; approved dependencies are Vulkan, SDL2, GLM, protobuf, nlohmann/json, and Google Test
 **RC-4:** Build time: < 2 minutes on modern hardware
 
 ### 3.3 Schedule Constraints
@@ -384,15 +414,25 @@ v1.0 is ready for release when:
 - [ ] Documentation complete
 - [ ] Build reproducible on clean system
 
+### 4.3 Debug Logging Requirement
+
+**NFR-1.4: Debug Logging**
+- **Priority:** High
+- **Description:** Source files shall include a `DEBUG_LOG` macro that is active when `MAP_RENDERER_DEBUG` is defined at compile time
+- **Acceptance Criteria:**
+  - `DEBUG_LOG(...)` expands to a formatted log statement in debug builds
+  - `DEBUG_LOG(...)` compiles to nothing in release builds
+  - Used consistently in core modules (window, Vulkan context, renderer, loader)
+
 ---
 
 ## 5. Priority Matrix
 
 | Priority | Requirements |
 |----------|-------------|
-| **Critical** | FR-1.1, FR-1.2, FR-2.1, FR-3.1, FR-3.2, FR-4.1, FR-4.2, NFR-1.1, NFR-1.3 |
-| **High** | FR-1.3, FR-2.2, FR-3.3, FR-3.4, FR-5.1, FR-5.2, FR-5.3, FR-6.1, NFR-2.2, NFR-3.1, NFR-3.2, NFR-4.1, NFR-4.2 |
-| **Medium** | FR-2.3, FR-4.3, FR-6.2, FR-6.3, NFR-2.1, NFR-5.1 |
+| **Critical** | FR-1.1, FR-1.2, FR-1.4, FR-2.1, FR-3.1, FR-3.2, FR-4.1, FR-4.2, NFR-1.1, NFR-1.3, NFR-1.4 |
+| **High** | FR-1.3, FR-2.2, FR-2.3, FR-3.3, FR-3.4, FR-5.1, FR-5.2, FR-5.3, FR-6.1, NFR-2.2, NFR-3.1, NFR-3.2, NFR-4.1, NFR-4.2 |
+| **Medium** | FR-4.3, FR-6.2, FR-6.3, NFR-2.1, NFR-5.1 |
 | **Low** | FR-4.4, NFR-5.2 |
 
 ---
@@ -410,6 +450,8 @@ The following are explicitly out of scope for v1.0:
 - Terrain elevation
 - Custom shader support
 - Plugin system
+- Polygon holes (e.g., courtyards within a building footprint)
+- Windows and macOS builds
 
 These may be considered for future versions.
 
@@ -429,7 +471,7 @@ The project is successful if:
 ## 8. Open Questions
 
 1. **Q: Should we support custom styles?**
-   A: Not in v1.0, but design for it
+   A: Basic JSON style file is supported; full Mapbox Style Spec is not in v1.0
 
 2. **Q: What's the minimum supported Vulkan version?**
    A: Vulkan 1.2
@@ -438,7 +480,10 @@ The project is successful if:
    A: Not in v1.0 (defer to v2.0)
 
 4. **Q: How do we handle very large datasets?**
-   A: Implement streaming in future version
+   A: Implement streaming/chunking in future version
 
 5. **Q: Should we support MVT format?**
-   A: Not in v1.0 (OSM JSON only)
+   A: Not in v1.0 (protobuf OSM data only)
+
+6. **Q: What is the single runtime coordinate space?**
+   A: Local ENU meters centered on the dataset center
