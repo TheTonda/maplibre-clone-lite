@@ -9,6 +9,30 @@
 
 #include <cstring>
 #include <cstdio>
+#include <filesystem>
+#include <string>
+
+/// Build a shader path that resolves regardless of the working directory.
+/// Tries MAP_RENDERER_SHADER_DIR first (absolute, set by CMake), then falls
+/// back to common relative locations.
+static std::string shader_path(const std::string& rel) {
+    namespace fs = std::filesystem;
+
+    // 1. Absolute path from CMake compile definition
+    std::string abs_from_def = std::string(MAP_RENDERER_SHADER_DIR) + "/" + rel;
+    if (fs::exists(abs_from_def)) return abs_from_def;
+
+    // 2. Running from project root: _build/shaders/...
+    std::string build_rel = "_build/shaders/" + rel;
+    if (fs::exists(build_rel)) return build_rel;
+
+    // 3. Running from _build/ directory: shaders/...
+    std::string direct = "shaders/" + rel;
+    if (fs::exists(direct)) return direct;
+
+    // Nothing found — return the absolute one so the error message is clearer
+    return abs_from_def;
+}
 
 // ======================================================================
 // Initialisation & Cleanup
@@ -70,14 +94,13 @@ void Renderer::initialize(VulkanContext& ctx) {
                           VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
                           VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
-    // Load shader modules
-    // The SPIR-V is compiled by tools/compile_shaders.sh to _build/shaders/
-    shader_mgr_.load_from_file("_build/shaders/2d/ground.vert.spv");
-    shader_mgr_.load_from_file("_build/shaders/2d/ground.frag.spv");
-    shader_mgr_.load_from_file("_build/shaders/2d/fill.vert.spv");
-    shader_mgr_.load_from_file("_build/shaders/2d/fill.frag.spv");
-    shader_mgr_.load_from_file("_build/shaders/3d/building.vert.spv");
-    shader_mgr_.load_from_file("_build/shaders/3d/building.frag.spv");
+    // Load shader modules (SPIR-V compiled by tools/compile_shaders.sh)
+    shader_mgr_.load_from_file(shader_path("2d/ground.vert.spv"));
+    shader_mgr_.load_from_file(shader_path("2d/ground.frag.spv"));
+    shader_mgr_.load_from_file(shader_path("2d/fill.vert.spv"));
+    shader_mgr_.load_from_file(shader_path("2d/fill.frag.spv"));
+    shader_mgr_.load_from_file(shader_path("3d/building.vert.spv"));
+    shader_mgr_.load_from_file(shader_path("3d/building.frag.spv"));
 
     // Create descriptor set for camera UBO
     create_camera_descriptor();
@@ -87,6 +110,13 @@ void Renderer::initialize(VulkanContext& ctx) {
     create_fill_pipeline();
     create_road_pipeline();
     create_building_pipeline();
+
+    // Diagnostic: confirm pipelines were created
+    std::fprintf(stdout, "[Renderer] Pipelines ready: ground=%p fill=%p road=%p building=%p\n",
+                 (void*)pipeline_mgr_.get_pipeline("ground_2d"),
+                 (void*)pipeline_mgr_.get_pipeline("fill_2d"),
+                 (void*)pipeline_mgr_.get_pipeline("road_2d"),
+                 (void*)pipeline_mgr_.get_pipeline("building_3d"));
 
     initialized_ = true;
 }
@@ -105,6 +135,8 @@ void Renderer::cleanup() {
     shader_mgr_.cleanup();
     camera_descriptor_.destroy();
     camera_buffer_.destroy();
+
+    initialized_ = false;
 }
 
 // ======================================================================
@@ -136,8 +168,8 @@ void Renderer::update_camera(const Camera& camera, float aspect) {
 // ======================================================================
 
 void Renderer::create_ground_pipeline() {
-    VkShaderModule vert = shader_mgr_.load_from_file("_build/shaders/2d/ground.vert.spv");
-    VkShaderModule frag = shader_mgr_.load_from_file("_build/shaders/2d/ground.frag.spv");
+    VkShaderModule vert = shader_mgr_.load_from_file(shader_path("2d/ground.vert.spv"));
+    VkShaderModule frag = shader_mgr_.load_from_file(shader_path("2d/ground.frag.spv"));
     if (!vert || !frag) {
         std::fprintf(stderr, "[Renderer] Failed to load ground shaders\n");
         return;
@@ -169,8 +201,8 @@ void Renderer::create_ground_pipeline() {
 }
 
 void Renderer::create_fill_pipeline() {
-    VkShaderModule vert = shader_mgr_.load_from_file("_build/shaders/2d/fill.vert.spv");
-    VkShaderModule frag = shader_mgr_.load_from_file("_build/shaders/2d/fill.frag.spv");
+    VkShaderModule vert = shader_mgr_.load_from_file(shader_path("2d/fill.vert.spv"));
+    VkShaderModule frag = shader_mgr_.load_from_file(shader_path("2d/fill.frag.spv"));
     if (!vert || !frag) {
         std::fprintf(stderr, "[Renderer] Failed to load fill shaders\n");
         return;
@@ -204,8 +236,8 @@ void Renderer::create_fill_pipeline() {
 void Renderer::create_road_pipeline() {
     // Re-use fill shaders for now (road vertices are 3D but rendered in 2D pass).
     // In later tasks we might add a dedicated road.vert with colour/UV support.
-    VkShaderModule vert = shader_mgr_.load_from_file("_build/shaders/2d/fill.vert.spv");
-    VkShaderModule frag = shader_mgr_.load_from_file("_build/shaders/2d/fill.frag.spv");
+    VkShaderModule vert = shader_mgr_.load_from_file(shader_path("2d/fill.vert.spv"));
+    VkShaderModule frag = shader_mgr_.load_from_file(shader_path("2d/fill.frag.spv"));
     if (!vert || !frag) return;
 
     // RoadVertex: vec3 pos (used as (x, y=0, z) for 2D ortho)
@@ -235,8 +267,8 @@ void Renderer::create_road_pipeline() {
 }
 
 void Renderer::create_building_pipeline() {
-    VkShaderModule vert = shader_mgr_.load_from_file("_build/shaders/3d/building.vert.spv");
-    VkShaderModule frag = shader_mgr_.load_from_file("_build/shaders/3d/building.frag.spv");
+    VkShaderModule vert = shader_mgr_.load_from_file(shader_path("3d/building.vert.spv"));
+    VkShaderModule frag = shader_mgr_.load_from_file(shader_path("3d/building.frag.spv"));
     if (!vert || !frag) {
         std::fprintf(stderr, "[Renderer] Failed to load building shaders\n");
         return;
@@ -327,6 +359,10 @@ void Renderer::set_geometry(const GeometryData& data) {
     upload_mesh(data.buildings.vertices.data(), data.buildings.vertices.size(),
                 data.buildings.indices.data(), data.buildings.indices.size(),
                 building_vb_, building_ib_, building_idx_count_);
+
+    std::fprintf(stdout, "[Renderer] Geometry set: ground=%u tris fill=%u road=%u building=%u\n",
+                 ground_idx_count_ / 3, fill_idx_count_ / 3,
+                 road_idx_count_ / 3, building_idx_count_ / 3);
 }
 
 // ======================================================================

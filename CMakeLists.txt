@@ -93,6 +93,13 @@ target_include_directories(map-renderer-lib
     ${CMAKE_CURRENT_BINARY_DIR}
     ${PROTOBUF_INCLUDE_DIRS}
 )
+
+# Pass the absolute shader output directory as a compile definition so the
+# renderer can find SPIR-V files regardless of the working directory.
+target_compile_definitions(map-renderer-lib
+  PRIVATE MAP_RENDERER_SHADER_DIR="${CMAKE_CURRENT_BINARY_DIR}/shaders"
+)
+
 target_link_libraries(map-renderer-lib
   PUBLIC
     Vulkan::Vulkan

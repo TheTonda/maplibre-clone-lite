@@ -12,10 +12,10 @@
 
 class Window {
 public:
-    /// Construct and show an SDL window with a Vulkan-compatible surface.
+    /// Construct and show an SDL window.
     Window(const std::string& title, int width, int height);
 
-    /// Destructor – cleans up SDL and the Vulkan surface.
+    /// Destructor – cleans up SDL resources.
     ~Window();
 
     // Non-copyable
@@ -43,13 +43,11 @@ public:
     // ---- Accessors ----
 
     SDL_Window*  get_sdl_window() const { return window_; }
-    VkSurfaceKHR get_surface()    const { return surface_; }
     int get_width()  const { return width_; }
     int get_height() const { return height_; }
 
 private:
     SDL_Window*    window_   = nullptr;
-    VkSurfaceKHR   surface_  = VK_NULL_HANDLE;
     int            width_    = 0;
     int            height_   = 0;
     bool           resized_  = false;

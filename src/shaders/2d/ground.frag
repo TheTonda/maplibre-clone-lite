@@ -9,8 +9,8 @@ layout(location = 0) out vec4 outColor;
 
 void main() {
     const float GRID = 50.0;
-    vec3 dark = vec3(0.10, 0.10, 0.12);  // near-black
-    vec3 grid = vec3(0.18, 0.18, 0.20);  // slightly lighter
+    vec3 dark = vec3(0.18, 0.20, 0.22);  // medium dark grey-blue
+    vec3 grid = vec3(0.28, 0.30, 0.32);  // lighter grid lines
 
     // Compute grid lines using fwidth for anti-aliasing
     vec2 pos = fragWorldPos.xz;

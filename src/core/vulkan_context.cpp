@@ -220,12 +220,19 @@ VulkanContext& VulkanContext::operator=(VulkanContext&& other) noexcept {
 // -----------------------------------------------------------------------
 
 void VulkanContext::initialize(Window& window) {
-    surface_ = window.get_surface();
+    create_instance();
+    setup_debug_messenger();
+
+    // Create Vulkan surface from the SDL window (needs the instance)
+    if (!SDL_Vulkan_CreateSurface(window.get_sdl_window(), instance_, &surface_)) {
+        std::fprintf(stderr, "[ERROR] SDL_Vulkan_CreateSurface failed: %s\n", SDL_GetError());
+        std::abort();
+    }
+    std::fprintf(stdout, "[INFO]  Vulkan surface created.\n");
+
     extent_  = {static_cast<uint32_t>(window.get_width()),
                 static_cast<uint32_t>(window.get_height())};
 
-    create_instance();
-    setup_debug_messenger();
     pick_physical_device();
     create_logical_device();
     create_swapchain();
@@ -293,6 +300,12 @@ void VulkanContext::cleanup() {
         // Device
         vkDestroyDevice(device_, nullptr);
         device_ = VK_NULL_HANDLE;
+    }
+
+    // Destroy surface (must be before instance)
+    if (surface_ != VK_NULL_HANDLE) {
+        vkDestroySurfaceKHR(instance_, surface_, nullptr);
+        surface_ = VK_NULL_HANDLE;
     }
 
     // Debug messenger
@@ -937,8 +950,7 @@ void VulkanContext::recreate_swapchain(Window& window) {
     if (swapchain_ != VK_NULL_HANDLE)
         vkDestroySwapchainKHR(device_, swapchain_, nullptr);
 
-    // Update surface from window (surface may have been recreated by SDL)
-    surface_ = window.get_surface();
+    // Update extent from window (surface stays the same on resize)
     extent_  = { static_cast<uint32_t>(window.get_width()),
                  static_cast<uint32_t>(window.get_height()) };
 
@@ -963,7 +975,7 @@ void VulkanContext::submit_frame(uint32_t image_index,
 
     // Begin render pass with clear values
     VkClearValue clear_values[2];
-    clear_values[0].color        = {{0.06f, 0.06f, 0.07f, 1.0f}};  // dark grey
+    clear_values[0].color        = {{0.10f, 0.12f, 0.15f, 1.0f}};  // dark navy-gray
     clear_values[1].depthStencil = {1.0f, 0};
 
     VkRenderPassBeginInfo rp{};

@@ -10,6 +10,7 @@
 #include "data/geometry_builder.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <string>
 
 /// C-style callback for VulkanContext::submit_frame.
@@ -19,6 +20,9 @@ static void record_draw_callback(VkCommandBuffer cmd, void* user_data) {
 }
 
 int main() {
+    // Disable stdout buffering so log output appears immediately
+    setvbuf(stdout, nullptr, _IONBF, 0);
+
     DEBUG_LOG("map-renderer starting...");
 
     constexpr int WIDTH  = 1280;
@@ -36,12 +40,14 @@ int main() {
     renderer.initialize(vk_ctx);
 
     // Create a default geometry set so we have something to render
+    constexpr float ground_half = 5000.0f;
     GeometryData geo;
-    geo.ground = GeometryBuilder::build_ground(5000.0f);
+    geo.ground = GeometryBuilder::build_ground(ground_half);
     renderer.set_geometry(geo);
 
-    // Set camera to reasonable default
-    camera.set_position(0.0f, 0.0f);
+    // Set camera bounds to match the ground plane extent
+    camera.set_frame_bounds(-ground_half, -ground_half,
+                             ground_half,  ground_half);
 
     float aspect = static_cast<float>(WIDTH) / static_cast<float>(HEIGHT);
 
@@ -100,8 +106,9 @@ int main() {
         }
     }
 
-    vk_ctx.cleanup();
+    // Clean up renderer first (uses device resources that VulkanContext owns)
     renderer.cleanup();
+    vk_ctx.cleanup();
     DEBUG_LOG("map-renderer exiting.");
     return 0;
 }

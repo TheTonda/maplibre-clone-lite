@@ -1,5 +1,5 @@
 /// @file window.cpp
-/// @brief SDL2 window implementation with Vulkan surface.
+/// @brief SDL2 window implementation.
 
 #include "core/window.h"
 
@@ -31,13 +31,7 @@ Window::Window(const std::string& title, int width, int height)
         std::abort();
     }
 
-    // Create Vulkan surface from SDL window
-    if (!SDL_Vulkan_CreateSurface(window_, VK_NULL_HANDLE, &surface_)) {
-        std::fprintf(stderr, "[ERROR] SDL_Vulkan_CreateSurface failed: %s\n", SDL_GetError());
-        SDL_DestroyWindow(window_);
-        SDL_Quit();
-        std::abort();
-    }
+    // (Vulkan surface is created by VulkanContext after the instance exists)
 
     last_tick_ = SDL_GetTicks64();
     mouse_initialised_ = false;
@@ -46,11 +40,7 @@ Window::Window(const std::string& title, int width, int height)
 }
 
 Window::~Window() {
-    if (surface_ != VK_NULL_HANDLE) {
-        // Surface must be destroyed *before* the Vulkan instance, but since
-        // we don't own the instance here the caller must clean up the surface.
-        // We just destroy the window / quit SDL.
-    }
+    // Vulkan surface is destroyed by VulkanContext before ~Window() runs.
     if (window_) {
         SDL_DestroyWindow(window_);
     }
