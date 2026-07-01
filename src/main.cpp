@@ -1720,10 +1720,43 @@ int main() {
             float build_pc[4] = { buildRule.extrude_color[0], buildRule.extrude_color[1],
                                   buildRule.extrude_color[2], buildRule.extrude_opacity };
 
-            DEBUG_LOG("Rendering buildings: %zu vertices, %u indices",
-                      buildingBatch.vertices.size(), buildingBatch.indices.size());
-            DEBUG_LOG("  Build color: rgba(%.2f, %.2f, %.2f, %.2f)",
-                      build_pc[0], build_pc[1], build_pc[2], build_pc[3]);
+            // Distance-based culling: only render buildings within view distance
+            // View distance scales with camera distance for LOD-like behavior
+            float view_distance = camera_distance * 2.5f;  // See ~2.5x camera distance
+            float view_dist_sq = view_distance * view_distance;
+
+            uint32_t visible_count = 0;
+            static uint32_t total_visible = 0;
+            static int frame_count = 0;
+
+            // Count visible buildings
+            for (const auto& bounds : buildingBatch.bounds) {
+                float dx = bounds.center_x - camera_x;
+                float dz = bounds.center_z - camera_y;  // camera_y is Z in world space
+                float dist_sq = dx * dx + dz * dz;
+                // Add building radius to distance check
+                float max_dist = view_distance + bounds.radius;
+                if (dist_sq < max_dist * max_dist) {
+                    visible_count++;
+                }
+            }
+
+            DEBUG_LOG("Culling: %zu/%zu buildings visible (view_dist=%.1f)",
+                      visible_count, buildingBatch.bounds.size(), view_distance);
+
+            // For now, render all buildings (culling is calculated but not yet applied to draw call)
+            // This is a placeholder - proper culling requires splitting into multiple draw calls
+            // or using indirect rendering
+
+            total_visible += visible_count;
+            frame_count++;
+            if (frame_count >= 60) {
+                printf("Avg visible buildings: %u/%zu (%.1f%%)\n",
+                       total_visible / frame_count, buildingBatch.bounds.size(),
+                       100.0f * (total_visible / frame_count) / buildingBatch.bounds.size());
+                frame_count = 0;
+                total_visible = 0;
+            }
 
             vkCmdBindDescriptorSets(cmd_bufs[i], VK_PIPELINE_BIND_POINT_GRAPHICS,
                                     building_pipeline_layout, 0, 1, &desc_set, 0, nullptr);
@@ -1735,10 +1768,14 @@ int main() {
                 vkCmdPushConstants(cmd_bufs[i], building_pipeline_layout,
                                   VK_SHADER_STAGE_VERTEX_BIT, 0,
                                   4 * sizeof(float), build_pc);
+                // For now, still draw all (full culling would require multiple draw calls)
                 vkCmdDrawIndexed(cmd_bufs[i],
                                  static_cast<uint32_t>(buildingBatch.indices.size()),
                                  1, 0, 0, 0);
-                printf("Frame: rendered %u building indices\n", buildingBatch.indices.size());
+                if (frame_count == 0) {
+                    printf("Frame: rendered %u building indices (of %zu visible)\n",
+                           buildingBatch.indices.size(), (size_t)visible_count);
+                }
             }
         }
 

@@ -31,10 +31,7 @@ struct BuildingVertex {
 
 // ─── A batch of extruded building geometry ready for GPU ───────────────
 
-struct BuildingBatch {
-    std::vector<BuildingVertex> vertices;
-    std::vector<uint32_t> indices;
-};
+// (BuildingBatch struct is defined later, after BuildingBounds)
 
 // ─── Convert a 2D footprint ring to 3D extruded box ───────────────────
 
@@ -129,9 +126,21 @@ inline void extrude_building(
 
 // ─── Convert all loaded buildings to GPU-ready batches ─────────────────
 
+struct BuildingBounds {
+    float center_x, center_z;  // Building center in XZ plane
+    float radius;               // Bounding sphere radius
+    float height;               // Building height
+};
+
+struct BuildingBatch {
+    std::vector<BuildingVertex> vertices;
+    std::vector<uint32_t> indices;
+    std::vector<BuildingBounds> bounds;  // Per-building bounds for culling
+};
+
 /// Extract building geometry from loaded OSM data.
 /// Coordinates are normalized so the data center is at (0, 0).
-/// Returns a single BuildingBatch with all buildings merged.
+/// Returns a single BuildingBatch with all buildings merged, plus per-building bounds for culling.
 inline BuildingBatch extract_buildings(const std::vector<osm::Building>& buildings) {
     BuildingBatch batch;
 
@@ -162,9 +171,29 @@ inline BuildingBatch extract_buildings(const std::vector<osm::Building>& buildin
         // Normalize footprint to center origin
         std::vector<osm::MercatorPoint> normalized_footprint;
         normalized_footprint.reserve(b.footprint.size());
+
+        // Compute building center and bounding radius
+        float bldg_min_x = 1e9f, bldg_min_y = 1e9f;
+        float bldg_max_x = -1e9f, bldg_max_y = -1e9f;
         for (const auto& p : b.footprint) {
-            normalized_footprint.push_back({p.x - center_x, p.y - center_y});
+            float nx = p.x - center_x;
+            float ny = p.y - center_y;
+            normalized_footprint.push_back({nx, ny});
+            if (nx < bldg_min_x) bldg_min_x = nx;
+            if (ny < bldg_min_y) bldg_min_y = ny;
+            if (nx > bldg_max_x) bldg_max_x = nx;
+            if (ny > bldg_max_y) bldg_max_y = ny;
         }
+
+        // Record bounds for culling
+        BuildingBounds bounds;
+        bounds.center_x = (bldg_min_x + bldg_max_x) * 0.5f;
+        bounds.center_z = (bldg_min_y + bldg_max_y) * 0.5f;
+        float dx = bldg_max_x - bldg_min_x;
+        float dz = bldg_max_y - bldg_min_y;
+        bounds.radius = std::sqrt(dx * dx + dz * dz) * 0.5f;
+        bounds.height = b.height;
+        batch.bounds.push_back(bounds);
 
         DEBUG_LOG("  extract: id=%lld, footprint=%zu, height=%.1f",
                   (long long)b.id, b.footprint.size(), b.height);
