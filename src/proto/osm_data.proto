@@ -1,0 +1,47 @@
+syntax = "proto3";
+package osm_proto;
+
+/// @brief A 2D point in local ENU (East-North-Up) coordinates.
+message Point2D {
+    double x = 1;  ///< Easting (metres)
+    double z = 2;  ///< Northing (metres)
+}
+
+/// @brief A building footprint with height metadata.
+message Building {
+    int64  id               = 1;
+    repeated Point2D footprint = 2;
+    float  height_m         = 3;
+    string height_source    = 4;  ///< "tag", "levels", "default"
+    string type             = 5;  ///< "house", "apartments", "commercial", etc.
+}
+
+/// @brief A road segment defined by a polyline.
+message Road {
+    int64  id               = 1;
+    repeated Point2D line   = 2;
+    string type             = 3;  ///< "primary", "secondary", "residential", etc.
+    float  width_m          = 4;
+}
+
+/// @brief A 2D polygon feature (parks, water bodies, land use areas).
+message PolygonFeature {
+    repeated Point2D polygon = 1;
+    string type              = 2;  ///< "park", "water", "landuse"
+}
+
+/// @brief Top-level container for a pre-processed OSM dataset.
+message OSMDataProto {
+    uint32 schema_version      = 1;  ///< Expected: 2
+    double center_x            = 2;  ///< Dataset centre (ENU easting)
+    double center_z            = 3;  ///< Dataset centre (ENU northing)
+    double min_x               = 4;
+    double min_z               = 5;
+    double max_x               = 6;
+    double max_z               = 7;
+    repeated Building buildings = 8;
+    repeated Road roads         = 9;
+    repeated PolygonFeature parks     = 10;
+    repeated PolygonFeature water     = 11;
+    repeated PolygonFeature landuse   = 12;
+}

@@ -1,0 +1,25 @@
+# Build artefacts
+build/
+_build/
+*.o
+*.obj
+
+# Shader binaries
+*.spv
+
+# Python
+*.pyc
+__pycache__/
+*.pyo
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Misc
+*.log
+compile_commands.json
