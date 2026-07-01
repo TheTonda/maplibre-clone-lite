@@ -8,10 +8,12 @@ with extruded buildings.
 
 - 2D orthographic mode with pan, zoom, and ground grid
 - 3D perspective mode with per-vertex-lit extruded buildings
-- Smooth camera controls (keyboard + mouse)
+- Dual-mode camera (2D ortho / 3D spherical orbit) with smooth controls
+- Full Vulkan pipeline: instance → device → swapchain → render pass → pipelines
 - Protobuf-based preprocessed OSM data pipeline
-- Comprehensive unit and integration tests
-- Debug-logging infrastructure
+- Ear-clipping triangulation for polygon features
+- 41 unit + integration tests (Google Test)
+- Debug-logging infrastructure, sanitizer support
 
 ## Dependencies
 
@@ -35,10 +37,24 @@ sudo pacman -S cmake vulkan-devel sdl2 glm protobuf gtest python-protobuf python
 ## Build
 
 ```bash
-mkdir build && cd build
+mkdir -p _build && cd _build
 cmake ..
 make -j$(nproc)
 ```
+
+Optionally enable sanitizers:
+```bash
+cmake .. -DMAP_RENDERER_USE_ASAN=ON -DMAP_RENDERER_USE_UBSAN=ON
+```
+
+## Compile Shaders
+
+```bash
+bash tools/compile_shaders.sh
+```
+
+This compiles GLSL sources in `src/shaders/` to SPIR-V binaries in
+`_build/shaders/`.  Requires `glslc` (Vulkan SDK).
 
 ## Run
 
@@ -54,17 +70,17 @@ make -j$(nproc)
 
 ## Controls
 
-| Key            | Action                              |
-|----------------|-------------------------------------|
-| Arrow keys     | Pan                                 |
-| `+` / `-`      | Zoom in / out                       |
-| Mouse drag     | Pan                                 |
-| Mouse scroll   | Zoom                                |
-| `Q` / `E`      | Tilt (3D mode)                      |
-| `A` / `D`      | Rotate (3D mode)                    |
-| `F1`           | Switch to 2D mode                   |
-| `F2`           | Switch to 3D mode                   |
-| `ESC`          | Quit                                |
+| Key       | 2D Mode           | 3D Mode             |
+|-----------|-------------------|---------------------|
+| Arrows/WASD | Pan             | Pan                 |
+| `+` / `-` | Zoom in / out     | Zoom in / out       |
+| Mouse drag | Pan              | Orbit (rotate+tilt) |
+| Scroll    | Zoom              | Zoom (distance)     |
+| `Q` / `E` | —                 | Tilt up / down      |
+| `A` / `D` | Pan left/right    | Rotate left/right   |
+| `F1`      | Switch to 2D mode | Switch to 2D mode   |
+| `F2`      | Switch to 3D mode | Switch to 3D mode   |
+| `ESC`     | Quit              | Quit                |
 
 ## Data Pipeline
 
@@ -81,10 +97,11 @@ renderer.
 ## Project Structure
 
 ```
-src/core/       Window, input, camera, renderer, Vulkan context
-src/data/       OSM loader, geometry builder, style engine
-src/graphics/   Vulkan wrappers (buffer, descriptor, pipeline, shader)
-src/proto/      Protobuf schema definition
+src/core/       Window, input state, camera, Vulkan context
+src/data/       OSM types, loader, geometry builder, style engine
+src/graphics/   Vulkan wrappers (buffer, descriptor, shader, pipeline)
+src/proto/      Protobuf schema definition (osm_data.proto)
+src/render/     Renderer class (pipelines, buffers, draw orchestration)
 src/shaders/    GLSL vertex/fragment shaders (2d/, 3d/)
 tests/          Google Test unit + integration tests
 tools/          Python preprocessing scripts
@@ -92,7 +109,3 @@ data/           Sample data and style definitions
 specs/          Design documents (HLD, LLD, requirements, task breakdown)
 docs/           Per-task build logs and notes
 ```
-
-## License
-
-MIT

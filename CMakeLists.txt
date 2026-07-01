@@ -9,6 +9,19 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 # ---------------------------------------------------------------------------
+# Sanitizers (optional)
+# ---------------------------------------------------------------------------
+option(MAP_RENDERER_USE_ASAN "Enable AddressSanitizer" OFF)
+option(MAP_RENDERER_USE_UBSAN "Enable UndefinedBehaviourSanitizer" OFF)
+if(MAP_RENDERER_USE_ASAN)
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address -fno-omit-frame-pointer")
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=address")
+endif()
+if(MAP_RENDERER_USE_UBSAN)
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=undefined")
+endif()
+
+# ---------------------------------------------------------------------------
 # Compiler Flags
 # ---------------------------------------------------------------------------
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Wpedantic")
@@ -101,6 +114,13 @@ target_compile_features(map-renderer PRIVATE cxx_std_23)
 # Test Executable
 # ---------------------------------------------------------------------------
 file(GLOB_RECURSE TEST_SRCS tests/*.cpp)
+
+# The Vulkan integration test requires a physical display + GPU — off by default.
+option(MAP_RENDERER_ENABLE_INTEGRATION_TESTS
+       "Build the Vulkan integration test (requires display)" OFF)
+if(NOT MAP_RENDERER_ENABLE_INTEGRATION_TESTS)
+  list(FILTER TEST_SRCS EXCLUDE REGEX "test_integration\\.cpp$")
+endif()
 add_executable(map-renderer-tests ${TEST_SRCS})
 target_link_libraries(map-renderer-tests
   PRIVATE
