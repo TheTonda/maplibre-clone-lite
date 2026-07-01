@@ -121,6 +121,8 @@ add_shader(map-renderer src/shaders/building.vert src/shaders/building.vert.spv)
 add_shader(map-renderer src/shaders/building.frag src/shaders/building.frag.spv)
 add_shader(map-renderer src/shaders/ground.vert src/shaders/ground.vert.spv)
 add_shader(map-renderer src/shaders/ground.frag src/shaders/ground.frag.spv)
+add_shader(map-renderer src/shaders/line3d.vert src/shaders/line3d.vert.spv)
+add_shader(map-renderer src/shaders/line3d.frag src/shaders/line3d.frag.spv)
 
 # Compiler flags
 target_compile_definitions(map-renderer PRIVATE MAP_RENDERER_DEBUG)

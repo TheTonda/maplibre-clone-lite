@@ -213,4 +213,137 @@ extract_fills_2d(const std::vector<osm::Park>& parks,
     return result;
 }
 
+// ─── Convert 2D features to 3D ground geometry ────────────────────────
+
+struct GroundFeatureBatch {
+    std::vector<float> vertices;  // x, z pairs (flat)
+    std::vector<uint32_t> indices;
+    glm::vec3 color;
+};
+
+/// Convert parks/water/landuse to 3D ground geometry (triangulated, normalized to origin)
+/// Coordinates are normalized so data center is at (0, 0), and Y is set to 0.1
+/// to avoid z-fighting with the ground plane.
+inline std::vector<GroundFeatureBatch>
+extract_ground_features(const std::vector<osm::Park>& parks,
+                        const std::vector<osm::WaterPolygon>& water,
+                        const std::vector<osm::Landuse>& landuse,
+                        glm::vec3 park_color,
+                        glm::vec3 water_color,
+                        glm::vec3 land_color)
+{
+    // First pass: find data center
+    float min_x = 1e9f, min_y = 1e9f;
+    float max_x = -1e9f, max_y = -1e9f;
+    for (const auto& p : parks) {
+        for (const auto& pt : p.polygon) {
+            if (pt.x < min_x) min_x = pt.x;
+            if (pt.y < min_y) min_y = pt.y;
+            if (pt.x > max_x) max_x = pt.x;
+            if (pt.y > max_y) max_y = pt.y;
+        }
+    }
+    for (const auto& w : water) {
+        for (const auto& pt : w.polygon) {
+            if (pt.x < min_x) min_x = pt.x;
+            if (pt.y < min_y) min_y = pt.y;
+            if (pt.x > max_x) max_x = pt.x;
+            if (pt.y > max_y) max_y = pt.y;
+        }
+    }
+    for (const auto& l : landuse) {
+        for (const auto& pt : l.polygon) {
+            if (pt.x < min_x) min_x = pt.x;
+            if (pt.y < min_y) min_y = pt.y;
+            if (pt.x > max_x) max_x = pt.x;
+            if (pt.y > max_y) max_y = pt.y;
+        }
+    }
+    float center_x = (min_x + max_x) * 0.5f;
+    float center_y = (min_y + max_y) * 0.5f;
+
+    std::vector<GroundFeatureBatch> result;
+
+    // Process each type separately (so each can have its own color)
+    auto process_polygons = [&](const auto& polygons, glm::vec3 color) {
+        GroundFeatureBatch batch;
+        batch.color = color;
+        for (const auto& feature : polygons) {
+            if (feature.polygon.size() < 3) continue;
+            uint32_t base = static_cast<uint32_t>(batch.vertices.size() / 2);
+            for (const auto& pt : feature.polygon) {
+                batch.vertices.push_back(pt.x - center_x);
+                batch.vertices.push_back(pt.y - center_y);
+            }
+            // Fan triangulation
+            for (uint32_t i = 1; i + 1 < feature.polygon.size(); ++i) {
+                batch.indices.push_back(base);
+                batch.indices.push_back(base + i);
+                batch.indices.push_back(base + i + 1);
+            }
+        }
+        if (!batch.vertices.empty()) {
+            result.push_back(std::move(batch));
+        }
+    };
+
+    process_polygons(parks, park_color);
+    process_polygons(water, water_color);
+    process_polygons(landuse, land_color);
+
+    printf("extract_ground_features: %zu feature groups (normalized to origin)\n", result.size());
+    return result;
+}
+
+// ─── Convert roads to 3D line geometry ─────────────────────────────────
+
+struct RoadLineBatch {
+    std::vector<float> vertices;  // x, z pairs (flat)
+    std::vector<uint32_t> indices;
+};
+
+/// Convert roads to 3D line geometry (normalized to origin)
+inline RoadLineBatch
+extract_road_lines(const std::vector<osm::Road>& roads)
+{
+    // Find data center
+    float min_x = 1e9f, min_y = 1e9f;
+    float max_x = -1e9f, max_y = -1e9f;
+    for (const auto& r : roads) {
+        for (const auto& pt : r.line) {
+            if (pt.x < min_x) min_x = pt.x;
+            if (pt.y < min_y) min_y = pt.y;
+            if (pt.x > max_x) max_x = pt.x;
+            if (pt.y > max_y) max_y = pt.y;
+        }
+    }
+    float center_x = (min_x + max_x) * 0.5f;
+    float center_y = (min_y + max_y) * 0.5f;
+
+    RoadLineBatch batch;
+    for (const auto& road : roads) {
+        if (road.line.size() < 2) continue;
+        uint32_t base = static_cast<uint32_t>(batch.vertices.size() / 2);
+        for (const auto& pt : road.line) {
+            batch.vertices.push_back(pt.x - center_x);
+            batch.vertices.push_back(pt.y - center_y);
+        }
+        // Line strip with primitive restart (use UINT32_MAX as restart)
+        for (uint32_t i = 0; i < road.line.size(); ++i) {
+            batch.indices.push_back(base + i);
+            if (i < road.line.size() - 1) {
+                // Add a small gap marker (not used in simple line rendering)
+            }
+        }
+        // Add a restart index to separate roads
+        if (base > 0) {
+            batch.indices.push_back(0xFFFFFFFF);
+        }
+    }
+
+    printf("extract_road_lines: %zu vertices, %zu indices\n",
+           batch.vertices.size() / 2, batch.indices.size());
+    return batch;
+}
+
 } // namespace bldg

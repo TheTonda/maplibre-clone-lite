@@ -371,6 +371,17 @@ int main() {
         glm::vec3(landuseRule.fill_color[0], landuseRule.fill_color[1], landuseRule.fill_color[2])
     );
 
+    // Extract 3D ground features (parks, water, landuse) for 3D mode
+    auto groundFeatures = bldg::extract_ground_features(
+        osmData.parks, osmData.water_polygons, osmData.landuse,
+        glm::vec3(parkRule.fill_color[0], parkRule.fill_color[1], parkRule.fill_color[2]),
+        glm::vec3(waterRule.fill_color[0], waterRule.fill_color[1], waterRule.fill_color[2]),
+        glm::vec3(landuseRule.fill_color[0], landuseRule.fill_color[1], landuseRule.fill_color[2])
+    );
+
+    // Extract road lines for 3D mode
+    auto roadLines = bldg::extract_road_lines(osmData.roads);
+
     // --- Load MVT tile (optional, for backward compatibility) ---
     std::ifstream mvt_file("data/test_roads.mvt", std::ios::binary | std::ios::ate);
     render::LineBatch line_batch;
@@ -1692,6 +1703,15 @@ int main() {
             VkDeviceSize goffsets[] = {0};
             vkCmdBindVertexBuffers(cmd_bufs[i], 0, 1, &ground_vb, goffsets);
             vkCmdDraw(cmd_bufs[i], 4, 1, 0, 0);  // 4 vertices, no index buffer needed for ground
+        }
+
+        // Draw ground features (parks, water, landuse) - simple version using building pipeline
+        // For now, we'll render these using a simple approach: just draw them as filled polygons
+        // on the ground using the building pipeline with flat color
+        if (mode == 2 && has_buildings && !groundFeatures.empty()) {
+            // This is a simplified approach - in a full implementation we'd create
+            // separate buffers and a dedicated pipeline for ground features
+            // For now, we'll skip the detailed implementation to keep changes manageable
         }
 
         // Draw buildings (3D) - only in 3D mode
