@@ -71,11 +71,13 @@ void Renderer::initialize(VulkanContext& ctx) {
                           VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
     // Load shader modules
-    // The SPIR-V is compiled by tools/compile_shaders.sh to _build/shaders/2d/
+    // The SPIR-V is compiled by tools/compile_shaders.sh to _build/shaders/
     shader_mgr_.load_from_file("_build/shaders/2d/ground.vert.spv");
     shader_mgr_.load_from_file("_build/shaders/2d/ground.frag.spv");
     shader_mgr_.load_from_file("_build/shaders/2d/fill.vert.spv");
     shader_mgr_.load_from_file("_build/shaders/2d/fill.frag.spv");
+    shader_mgr_.load_from_file("_build/shaders/3d/building.vert.spv");
+    shader_mgr_.load_from_file("_build/shaders/3d/building.frag.spv");
 
     // Create descriptor set for camera UBO
     create_camera_descriptor();
@@ -233,11 +235,12 @@ void Renderer::create_road_pipeline() {
 }
 
 void Renderer::create_building_pipeline() {
-    // Re-use fill shaders for now (buildings rendered as flat-colour in 2D view).
-    // T15 will add dedicated 3D building shaders with lighting.
-    VkShaderModule vert = shader_mgr_.load_from_file("_build/shaders/2d/fill.vert.spv");
-    VkShaderModule frag = shader_mgr_.load_from_file("_build/shaders/2d/fill.frag.spv");
-    if (!vert || !frag) return;
+    VkShaderModule vert = shader_mgr_.load_from_file("_build/shaders/3d/building.vert.spv");
+    VkShaderModule frag = shader_mgr_.load_from_file("_build/shaders/3d/building.frag.spv");
+    if (!vert || !frag) {
+        std::fprintf(stderr, "[Renderer] Failed to load building shaders\n");
+        return;
+    }
 
     // BuildingVertex: vec3 pos + vec3 normal
     VkVertexInputBindingDescription binding{};
