@@ -65,8 +65,11 @@ public:
     uint32_t acquire_next_image();
 
     /// Record and submit a draw command buffer for the current framebuffer,
-    /// then present the result.
-    void submit_frame(uint32_t image_index);
+    /// then present the result.  The optional callback lets a Renderer inject
+    /// draw commands between cmdBeginRenderPass / cmdEndRenderPass.
+    void submit_frame(uint32_t image_index,
+                       void (*record_fn)(VkCommandBuffer, void*) = nullptr,
+                       void* user_data = nullptr);
 
     /// Swapchain framebuffer at index @p i.
     VkFramebuffer           get_framebuffer(size_t i) const { return framebuffers_[i]; }

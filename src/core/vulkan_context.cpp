@@ -904,7 +904,9 @@ uint32_t VulkanContext::acquire_next_image() {
     return image_index;
 }
 
-void VulkanContext::submit_frame(uint32_t image_index) {
+void VulkanContext::submit_frame(uint32_t image_index,
+                                   void (*record_fn)(VkCommandBuffer, void*),
+                                   void* user_data) {
     VkCommandBuffer cmd = allocate_command_buffer();
 
     // Begin recording
@@ -928,7 +930,9 @@ void VulkanContext::submit_frame(uint32_t image_index) {
     rp.pClearValues      = clear_values;
 
     vkCmdBeginRenderPass(cmd, &rp, VK_SUBPASS_CONTENTS_INLINE);
-    // (No draw calls yet — renders cleared colour)
+    if (record_fn) {
+        record_fn(cmd, user_data);
+    }
     vkCmdEndRenderPass(cmd);
     vkEndCommandBuffer(cmd);
 

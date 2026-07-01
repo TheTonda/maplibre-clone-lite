@@ -70,6 +70,7 @@ file(GLOB_RECURSE CORE_SRCS
   src/core/*.cpp
   src/data/*.cpp
   src/graphics/*.cpp
+  src/render/*.cpp
   ${PROTO_SRC}
 )
 add_library(map-renderer-lib SHARED ${CORE_SRCS} ${PROTO_HDR})
