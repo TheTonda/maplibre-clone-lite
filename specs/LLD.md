@@ -1,9 +1,9 @@
 # Low-Level Design (LLD) Specification
 ## Interactive 3D Map Renderer
 
-**Version:** 1.1  
+**Version:** 1.2  
 **Date:** July 2, 2026  
-**Status:** Specification - Optimized after review
+**Status:** Specification - Optimized after second review
 
 ---
 
@@ -71,7 +71,7 @@ private:
 
 **Responsibilities:**
 - Create SDL window with Vulkan support
-- Create Vulkan surface
+- Create Vulkan surface via `SDL_Vulkan_CreateSurface` (Window owns the surface)
 - Handle window events (resize, close)
 - Populate an `InputState` object each frame via `poll_events(InputState&)`
 
@@ -238,6 +238,10 @@ private:
     float x_ = 0.0f;  // east
     float z_ = 0.0f;  // north
 
+    // Data extent (set by frame_bounds, used for projection)
+    float data_extent_x_ = 100.0f;
+    float data_extent_z_ = 100.0f;
+
     // 2D mode
     float zoom_ = 1.0f;  // 1.0 = show full data extent
 
@@ -370,11 +374,11 @@ package map_renderer;
 
 message Point2D {
     double x = 1;  // local ENU east coordinate in meters
-    double y = 2;  // local ENU north coordinate in meters
+    double z = 2;  // local ENU north coordinate in meters
 }
 
 message Building {
-    int64_t id = 1;
+    int64 id = 1;
     repeated Point2D footprint = 2;
     float height_m = 3;
     string height_source = 4;  // "tag", "levels", "default"
@@ -382,7 +386,7 @@ message Building {
 }
 
 message Road {
-    int64_t id = 1;
+    int64 id = 1;
     repeated Point2D line = 2;
     string type = 3;
     float width_m = 4;
@@ -394,18 +398,19 @@ message PolygonFeature {
 }
 
 message OSMDataProto {
-    repeated Building buildings = 1;
-    repeated Road roads = 2;
-    repeated PolygonFeature parks = 3;
-    repeated PolygonFeature water = 4;
-    repeated PolygonFeature landuse = 5;
+    uint32 schema_version = 1;
+    repeated Building buildings = 2;
+    repeated Road roads = 3;
+    repeated PolygonFeature parks = 4;
+    repeated PolygonFeature water = 5;
+    repeated PolygonFeature landuse = 6;
 
-    double center_x = 6;
-    double center_y = 7;
-    double min_x = 8;
-    double max_x = 9;
-    double min_y = 10;
-    double max_y = 11;
+    double center_x = 7;  // ENU east (meters)
+    double center_z = 8;  // ENU north (meters)
+    double min_x = 9;
+    double max_x = 10;
+    double min_z = 11;
+    double max_z = 12;
 }
 ```
 
@@ -417,7 +422,7 @@ message OSMDataProto {
 ```cpp
 namespace osm {
     struct Point {
-        float x, y;  // local ENU meters relative to center
+        float x, z;  // local ENU meters: x=east, z=north
     };
 
     enum class HeightSource { Tag, Levels, Default };
@@ -450,10 +455,10 @@ namespace osm {
         std::vector<PolygonFeature> landuse;
 
         // Bounds (local ENU meters)
-        float min_x, min_y, max_x, max_y;
+        float min_x, min_z, max_x, max_z;
 
         // Center (local ENU meters, usually 0,0)
-        float center_x, center_y;
+        float center_x, center_z;
     };
 }
 ```
@@ -471,7 +476,8 @@ public:
     static osm::OSMData load_from_proto(const std::vector<uint8_t>& bytes);
 
 private:
-    static void compute_bounds(osm::OSMData& data);
+    // Validates that protobuf bounds are sane; recomputes only if invalid
+    static void validate_bounds(osm::OSMData& data);
 };
 ```
 
@@ -509,6 +515,35 @@ public:
 
     // Build ground plane
     static GroundMesh build_ground(float half_size_meters);
+};
+```
+
+**Mesh Types:**
+```cpp
+struct BuildingMesh {
+    std::vector<BuildingVertex> vertices;
+    std::vector<uint32_t> indices;
+};
+
+struct PolygonMesh {
+    std::vector<float> vertices;  // x, z pairs
+    std::vector<uint32_t> indices;
+};
+
+struct LineMesh {
+    std::vector<float> vertices;  // x, y, z triplets (road quads)
+    std::vector<uint32_t> indices;
+};
+
+struct GroundMesh {
+    std::vector<float> vertices;  // x, z pairs
+};
+
+struct GeometryData {
+    BuildingMesh buildings;
+    PolygonMesh polygons;       // parks + water + landuse combined
+    LineMesh roads;
+    GroundMesh ground;
 };
 ```
 
@@ -587,6 +622,54 @@ private:
 ---
 
 ## 7. Graphics Pipeline
+
+### 7.0 GPU Buffer and Descriptor Wrappers (`graphics/buffer.h`, `graphics/descriptor.h`)
+
+**Buffer (`graphics/buffer.h`):**
+```cpp
+class Buffer {
+public:
+    bool create(VkDevice device, VkPhysicalDevice phys_dev,
+                VkDeviceSize size, VkBufferUsageFlags usage,
+                VkMemoryPropertyFlags properties);
+    void destroy();
+
+    void upload(VkDevice device, const void* data, VkDeviceSize size) const;
+
+    VkBuffer get_handle() const;
+    VkDeviceMemory get_memory() const;
+    VkDeviceSize get_size() const;
+
+private:
+    VkBuffer buffer_ = VK_NULL_HANDLE;
+    VkDeviceMemory memory_ = VK_NULL_HANDLE;
+    VkDeviceSize size_ = 0;
+};
+```
+
+**DescriptorSet (`graphics/descriptor.h`):**
+```cpp
+class DescriptorSet {
+public:
+    bool create(VkDevice device,
+                const std::vector<VkDescriptorSetLayoutBinding>& bindings);
+    void destroy();
+
+    VkDescriptorSetLayout get_layout() const;
+    VkDescriptorSet get_set() const;
+    VkDescriptorPool get_pool() const;
+
+    void update_buffer(VkDevice device, uint32_t binding,
+                       VkBuffer buffer, VkDeviceSize offset,
+                       VkDeviceSize range) const;
+
+private:
+    VkDevice device_ = VK_NULL_HANDLE;
+    VkDescriptorPool pool_ = VK_NULL_HANDLE;
+    VkDescriptorSetLayout layout_ = VK_NULL_HANDLE;
+    VkDescriptorSet set_ = VK_NULL_HANDLE;
+};
+```
 
 ### 7.1 Pipeline Manager (`graphics/pipeline.h`)
 
@@ -763,7 +846,7 @@ void main() {
 }
 ```
 
-### 7.2 3D Building Shader
+### 9.2 3D Building Shader
 
 **Vertex:**
 ```glsl

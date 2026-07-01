@@ -1,9 +1,9 @@
 # Requirements Specification
 ## Interactive 3D Map Renderer
 
-**Version:** 1.1  
+**Version:** 1.2  
 **Date:** July 2, 2026  
-**Status:** Specification - Optimized after review
+**Status:** Specification - Optimized after second review
 
 ---
 
@@ -23,9 +23,9 @@
   - Handles missing fields gracefully
   - Protobuf schema version checked and mismatches reported
 
-**FR-1.2: Coordinate Conversion**
+**FR-1.2: Coordinate Conversion (Preprocessor)**
 - **Priority:** High
-- **Description:** System shall convert WGS84 lat/lon to local ENU meters centered on the dataset
+- **Description:** The Python preprocessor shall convert WGS84 lat/lon to local ENU meters centered on the dataset
 - **Input:** WGS84 latitude/longitude (degrees)
 - **Output:** Local ENU meters (x=east, z=north) relative to data center
 - **Acceptance Criteria:**
@@ -44,9 +44,9 @@
   - Provides default colors if style missing
   - Invalid style JSON falls back to built-in defaults with a warning
 
-**FR-1.4: Building Height Fallback**
+**FR-1.4: Building Height Fallback (Preprocessor)**
 - **Priority:** High
-- **Description:** System shall determine building height using a fallback chain
+- **Description:** The Python preprocessor shall determine building height using a fallback chain
 - **Input:** OSM tags for a building
 - **Output:** Height in meters and the source of the value
 - **Fallback Chain:**
@@ -151,7 +151,7 @@
 - **Acceptance Criteria:**
   - Renders ground plane
   - Renders parks, water, landuse as filled polygons
-  - Renders roads as lines
+  - Renders roads as filled quads
   - No depth testing
   - Correct z-ordering
 
@@ -240,7 +240,7 @@
 - **Acceptance Criteria:**
   - GPU memory < 500MB
   - System memory < 200MB
-  - No memory leaks
+  - No memory leaks (AddressSanitizer / LeakSanitizer)
 
 **FR-6.3: Load Time**
 - **Priority:** Medium
@@ -283,6 +283,14 @@
   - All tests pass
   - Memory correctness checked with AddressSanitizer / LeakSanitizer
 
+**NFR-1.4: Debug Logging**
+- **Priority:** High
+- **Description:** Source files shall include a `DEBUG_LOG` macro that is active when `MAP_RENDERER_DEBUG` is defined at compile time
+- **Acceptance Criteria:**
+  - `DEBUG_LOG(...)` expands to a formatted log statement in debug builds
+  - `DEBUG_LOG(...)` compiles to nothing in release builds
+  - Used consistently in core modules (window, Vulkan context, renderer, loader)
+
 ### 2.2 Portability
 
 **NFR-2.1: Cross-Platform**
@@ -297,11 +305,10 @@
 
 **NFR-2.2: Compiler Support**
 - **Priority:** High
-- **Description:** Code shall compile with modern compilers
+- **Description:** Code shall compile with modern compilers on Linux
 - **Acceptance Criteria:**
-  - GCC 11+
-  - Clang 14+
-  - MSVC 2022+
+  - GCC 12+
+  - Clang 15+
 
 ### 2.3 Maintainability
 
@@ -398,7 +405,7 @@ A feature is "done" when:
 - [ ] Unit tests written and passing
 - [ ] Integration tests passing
 - [ ] Manual testing completed
-- [ ] Code reviewed
+- [ ] Self-reviewed and tested
 - [ ] Documentation updated
 - [ ] No compiler warnings
 - [ ] Committed to repository
@@ -414,15 +421,9 @@ v1.0 is ready for release when:
 - [ ] Documentation complete
 - [ ] Build reproducible on clean system
 
-### 4.3 Debug Logging Requirement
+### 4.3 Debug Logging
 
-**NFR-1.4: Debug Logging**
-- **Priority:** High
-- **Description:** Source files shall include a `DEBUG_LOG` macro that is active when `MAP_RENDERER_DEBUG` is defined at compile time
-- **Acceptance Criteria:**
-  - `DEBUG_LOG(...)` expands to a formatted log statement in debug builds
-  - `DEBUG_LOG(...)` compiles to nothing in release builds
-  - Used consistently in core modules (window, Vulkan context, renderer, loader)
+See **NFR-1.4** in section 2.1 (Code Quality).
 
 ---
 

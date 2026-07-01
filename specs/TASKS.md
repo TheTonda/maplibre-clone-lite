@@ -1,9 +1,9 @@
 # Detailed Task Breakdown
 ## Interactive 3D Map Renderer
 
-**Version:** 1.1  
+**Version:** 1.2  
 **Date:** July 2, 2026  
-**Status:** Specification - Optimized after review
+**Status:** Specification - Optimized after second review
 
 ---
 
@@ -11,9 +11,9 @@
 
 This document breaks down the project into detailed tasks and subtasks. Each task is small enough to be completed in 1-4 hours and has clear acceptance criteria.
 
-**Total Tasks:** 50  
-**Total Subtasks:** 200+  
-**Estimated Effort:** 6–7 weeks
+**Total Tasks:** 52  
+**Total Subtasks:** 220+  
+**Estimated Effort:** 6 to 7 weeks
 
 ---
 
@@ -99,6 +99,42 @@ This document breaks down the project into detailed tasks and subtasks. Each tas
 
 ---
 
+### Task 1.5: Implement GPU buffer and descriptor wrappers
+**Priority:** Critical  
+**Estimated Time:** 3 hours
+
+**Subtasks:**
+- [ ] 1.5.1: Implement `Buffer` class (create, destroy, upload, get_handle)
+- [ ] 1.5.2: Implement `DescriptorSet` class (create, destroy, update_buffer, get_set)
+- [ ] 1.5.3: Write unit tests for buffer creation and upload
+- [ ] 1.5.4: Write unit tests for descriptor set creation
+
+**Acceptance Criteria:**
+- Buffers can be created with correct usage flags
+- Data can be uploaded to buffers
+- Descriptor sets can bind uniform buffers
+
+---
+
+### Task 1.6: Create camera UBO and descriptor set
+**Priority:** High  
+**Estimated Time:** 2 hours
+
+**Subtasks:**
+- [ ] 1.6.1: Define CameraUBO struct (mat4 proj, mat4 view)
+- [ ] 1.6.2: Create uniform buffer for camera data
+- [ ] 1.6.3: Create descriptor set layout for camera UBO
+- [ ] 1.6.4: Create descriptor pool and allocate set
+- [ ] 1.6.5: Bind uniform buffer to descriptor set
+- [ ] 1.6.6: Write test for UBO update
+
+**Acceptance Criteria:**
+- Camera UBO created and updatable
+- Descriptor set binds correctly
+- UBO can be updated each frame
+
+---
+
 ## Phase 2: Minimal Vulkan Window (Week 1)
 
 ### Task 2.1: Create Window class
@@ -107,7 +143,7 @@ This document breaks down the project into detailed tasks and subtasks. Each tas
 
 **Subtasks:**
 - [ ] 2.1.1: Create src/core/window.h with class declaration
-- [ ] 2.1.2: Implement SDL_Init in constructor
+- [ ] 2.1.2: Implement SDL_Init in initialize() method
 - [ ] 2.1.3: Implement SDL_CreateWindow
 - [ ] 2.1.4: Implement event polling
 - [ ] 2.1.5: Implement should_close()
@@ -362,7 +398,7 @@ This document breaks down the project into detailed tasks and subtasks. Each tas
 - [ ] 3.3.1: Define vertex input (none for now)
 - [ ] 3.3.2: Define input assembly (triangle list)
 - [ ] 3.3.3: Define viewport state
-- [ ] 3.3.4: Define rasterization (no culling)
+- [ ] 3.3.4: Define rasterization (no culling for triangle; backface culling added later for buildings)
 - [ ] 3.3.5: Define multisampling (1 sample)
 - [ ] 3.3.6: Define depth stencil
 - [ ] 3.3.7: Define color blending
@@ -458,16 +494,17 @@ This document breaks down the project into detailed tasks and subtasks. Each tas
 **Priority:** Critical  
 **Estimated Time:** 4 hours
 
+**Prerequisites:** Python protobuf and osmium packages installed
+
 **Subtasks:**
-- [ ] 4.4.1: Install Python protobuf and osmium packages
-- [ ] 4.4.2: Read OSM PBF file
-- [ ] 4.4.3: Convert WGS84 lat/lon to local ENU meters centered on dataset
-- [ ] 4.4.4: Extract buildings with height fallback (tag → levels → default)
-- [ ] 4.4.5: Extract roads and road widths
-- [ ] 4.4.6: Extract parks, water, landuse polygons
-- [ ] 4.4.7: Serialize to protobuf binary file
-- [ ] 4.4.8: Write unit tests
-- [ ] 4.4.9: Test with NewDelhi.osm.pbf
+- [ ] 4.4.1: Read OSM PBF file
+- [ ] 4.4.2: Convert WGS84 lat/lon to local ENU meters centered on dataset
+- [ ] 4.4.3: Extract buildings with height fallback (tag, levels, default)
+- [ ] 4.4.4: Extract roads and road widths
+- [ ] 4.4.5: Extract parks, water, landuse polygons
+- [ ] 4.4.6: Serialize to protobuf binary file
+- [ ] 4.4.7: Write unit tests
+- [ ] 4.4.8: Test with NewDelhi.osm.pbf
 
 **Acceptance Criteria:**
 - Can extract OSM data
@@ -503,7 +540,7 @@ This document breaks down the project into detailed tasks and subtasks. Each tas
 
 **Subtasks:**
 - [ ] 5.2.1: Create src/core/camera.h
-- [ ] 5.2.2: Define CameraMode enum and InputState
+- [ ] 5.2.2: Define CameraMode enum (InputState is created in Task 7.1; use a stub interface for now)
 - [ ] 5.2.3: Implement 2D orthographic projection based on data extent
 - [ ] 5.2.4: Implement zoom (0.1x to 20x, 1.0 = full extent)
 - [ ] 5.2.5: Implement pan in ENU meters
@@ -694,10 +731,6 @@ This document breaks down the project into detailed tasks and subtasks. Each tas
 - Buildings visible in 3D
 - Proper lighting
 - Correct colors
-
----
-
-
 
 ---
 
@@ -935,7 +968,11 @@ Task 2.10 (Command pool) → Task 2.12 (Main loop)
 Task 3.1 (Shaders) → Task 3.3 (Pipeline) → Task 3.4 (Draw)
 Task 4.1 (Data structures) → Task 4.2 (Protobuf schema) → Task 4.3 (OSM loader)
 Task 4.2 (Protobuf schema) → Task 4.4 (Python preprocessor)
+Task 4.3 (OSM loader) → Task 5.5 (Polygon fills), Task 5.6 (Roads), Task 6.5 (Render buildings)
+Task 1.5 (Buffer/Descriptor wrappers) → Task 1.6 (Camera UBO), Task 5.4 (Render ground), Task 5.5, Task 5.6, Task 6.5
+Task 1.6 (Camera UBO) → Task 5.4 (Render ground)
 Task 5.1 (Style engine) → Task 5.5 (Polygon fills), Task 5.6 (Roads)
+Task 3.2 (Shader module loader) → Task 5.3 (Ground shader), Task 5.4 (Render ground)
 Task 5.2 (2D camera) → Task 5.4 (Render ground), Task 7.4 (Mode switching)
 Task 5.3 (Ground shader) → Task 5.4 (Render ground)
 Task 6.0 (Depth testing) → Task 6.5 (Render buildings)

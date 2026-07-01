@@ -1,9 +1,9 @@
 # High-Level Design (HLD) Specification
 ## Interactive 3D Map Renderer
 
-**Version:** 1.1  
+**Version:** 1.2  
 **Date:** July 2, 2026  
-**Status:** Specification - Optimized after review
+**Status:** Specification - Optimized after second review
 
 ---
 
@@ -173,14 +173,14 @@ The loader receives `(x, z)` in meters and stores them directly. `y` is generate
 ### 4.2 Camera System
 - **2D Mode:** Orthographic projection, pan/zoom
 - **3D Mode:** Perspective projection with tilt
-- **Parameters:** position (x, y), distance, tilt, rotation
-- **Controls:** Arrow keys, mouse drag, Q/E (tilt), A/D (rotate)
+- **Parameters:** position (x, z), distance, tilt, rotation
+- **Controls:** Arrow keys, mouse drag, +/- or scroll (zoom), Q/E (tilt), A/D (rotate)
 
 ### 4.3 Rendering Pipelines
 
 #### 2D Pipeline
 - Orthographic projection
-- Render order: ground → fills → lines
+- Render order: ground → fills → road quads
 - No depth testing
 - Simple shaders
 
@@ -247,7 +247,7 @@ The loader receives `(x, z)` in meters and stores them directly. `y` is generate
 - **Performance Tests:** FPS and memory benchmarks
 
 ### 6.2 Test Coverage Goals
-- 80%+ code coverage
+- 80%+ code coverage for non-Vulkan logic
 - All public APIs tested
 - Edge cases covered
 - Error paths tested
@@ -264,19 +264,19 @@ The loader receives `(x, z)` in meters and stores them directly. `y` is generate
 
 ### Phase 1: Foundation (Week 1)
 - Project setup
-- Build system
-- Basic Vulkan window
-- Hello triangle
+- Build system (CMake, protobuf, nlohmann/json, GTest)
+- Basic Vulkan window with depth buffer
+- Hello triangle (optional milestone)
 
 ### Phase 2: Data Pipeline (Week 2)
-- OSM JSON loader
-- Coordinate conversion
-- Python preprocessing tool
+- OSM protobuf schema and loader
+- Python preprocessor (WGS84 to ENU, height fallback)
+- Style engine
 
 ### Phase 3: 2D Rendering (Week 3)
 - Orthographic camera
 - 2D shaders
-- Render polygons and lines
+- Render polygon fills and road quads
 
 ### Phase 4: 3D Rendering (Week 4)
 - Perspective camera
@@ -284,6 +284,7 @@ The loader receives `(x, z)` in meters and stores them directly. `y` is generate
 - 3D shaders with lighting
 
 ### Phase 5: Interactivity (Week 5)
+- Input state system
 - Mouse/keyboard input
 - Camera controls
 - Pan/zoom/tilt
@@ -302,10 +303,16 @@ The loader receives `(x, z)` in meters and stores them directly. `y` is generate
   **Mitigation:** Start with simple examples, add complexity gradually
 
 - **Risk:** Coordinate system bugs  
-  **Mitigation:** Comprehensive tests for coordinate conversions
+  **Mitigation:** Comprehensive tests for coordinate conversions; single ENU space throughout
 
 - **Risk:** Performance issues  
   **Mitigation:** Profile early and often, implement culling
+
+- **Risk:** Protobuf schema evolution  
+  **Mitigation:** Include schema version field; validate on load
+
+- **Risk:** Python preprocessor correctness  
+  **Mitigation:** Unit tests for ENU conversion and height fallback; test with real OSM data
 
 ### 8.2 Project Risks
 - **Risk:** Scope creep  
@@ -329,12 +336,15 @@ The project is successful when:
 
 ---
 
-## 10. Open Questions
+## 10. Resolved Decisions
 
-1. Should we support multiple style layers with z-ordering? *(Answer: not in v1.0)*
-2. Do we need support for custom shaders? *(Answer: not in v1.0, but design for it)*
-3. Should we implement building shadows? *(Answer: not in v1.0)*
-4. Do we need support for terrain elevation? *(Answer: not in v1.0)*
-5. Should we support MVT (Mapbox Vector Tiles) format? *(Answer: not in v1.0)*
-
-These questions will be addressed in the Low-Level Design document.
+1. Multiple style layers with z-ordering: not in v1.0
+2. Custom shaders: not in v1.0, but design for it
+3. Building shadows: not in v1.0
+4. Terrain elevation: not in v1.0
+5. MVT (Mapbox Vector Tiles) format: not in v1.0
+6. Data format: protobuf for preprocessed OSM data
+7. Style format: nlohmann/json for style definitions
+8. Coordinate space: local ENU meters centered on dataset center
+9. Platforms: Linux v1.0, Android planned, Windows/macOS deferred
+10. Road rendering: quads, not Vulkan lines
