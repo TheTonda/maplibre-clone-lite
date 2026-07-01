@@ -260,7 +260,7 @@ int main() {
     float camera_x = 0.0f;
     float camera_y = 0.0f;
     float zoom_level = 14.0f;
-    float tilt_angle = 0.0f;
+    float tilt_angle = 45.0f;  // Default tilt to see 3D buildings
     int mode = 2;
 
     // --- Load OSM data ---
@@ -310,21 +310,43 @@ int main() {
     
     printf("Data bounds: (%.0f,%.0f) to (%.0f,%.0f)\n", min_x, min_y, max_x, max_y);
     printf("Data center: (%.0f,%.0f), range: %.0f\n", center_x, center_y, max_range * 2);
-    
-    camera_x = center_x;
-    camera_y = center_y;
-    
-    // Calculate zoom to show all data
-    // visible_half_w = 2.0 / zoom_level, and we need visible_half_w >= max_range
-    // So zoom_level = 2.0 / max_range (with some padding)
+
+    // Camera starts at origin (buildings are normalized to origin)
+    camera_x = 0.0f;
+    camera_y = 0.0f;
+
+    // Calculate zoom for 2D mode (based on original data bounds)
     float padding = 1.5f;
-    zoom_level = 2.0f * padding / max_range;
+    zoom_level = 2.0f / (max_range * padding);
     if (zoom_level < 0.001f) zoom_level = 0.001f;
-    
+
     printf("Initial zoom: %.6f\n", zoom_level);
 
     // --- Extract building geometry ---
     bldg::BuildingBatch buildingBatch = bldg::extract_buildings(osmData.buildings);
+
+    // --- Compute maximum building height for camera positioning ---
+    float max_building_height = 0.0f;
+    for (const auto& v : buildingBatch.vertices) {
+        if (v.y > max_building_height) {
+            max_building_height = v.y;
+        }
+    }
+    printf("Max building height: %.1f\n", max_building_height);
+
+    // --- Compute building bounds (already normalized to origin) ---
+    float bldg_min_x = 1e9f, bldg_min_y = 1e9f, bldg_min_z = 1e9f;
+    float bldg_max_x = -1e9f, bldg_max_y = -1e9f, bldg_max_z = -1e9f;
+    for (const auto& v : buildingBatch.vertices) {
+        if (v.x < bldg_min_x) bldg_min_x = v.x;
+        if (v.y < bldg_min_y) bldg_min_y = v.y;
+        if (v.z < bldg_min_z) bldg_min_z = v.z;
+        if (v.x > bldg_max_x) bldg_max_x = v.x;
+        if (v.y > bldg_max_y) bldg_max_y = v.y;
+        if (v.z > bldg_max_z) bldg_max_z = v.z;
+    }
+    printf("Building bounds: X(%.0f to %.0f) Y(0 to %.0f) Z(%.0f to %.0f)\n",
+           bldg_min_x, bldg_max_x, bldg_max_y, bldg_min_z, bldg_max_z);
 
     // --- Extract 2D fills for parks, water, landuse ---
     style::StyleRule parkRule = styleEngine.matchRule("parks", std::string("fill"));
@@ -1494,6 +1516,11 @@ int main() {
             float build_pc[4] = { buildRule.extrude_color[0], buildRule.extrude_color[1],
                                   buildRule.extrude_color[2], buildRule.extrude_opacity };
 
+            DEBUG_LOG("Rendering buildings: %zu vertices, %u indices",
+                      buildingBatch.vertices.size(), buildingBatch.indices.size());
+            DEBUG_LOG("  Build color: rgba(%.2f, %.2f, %.2f, %.2f)",
+                      build_pc[0], build_pc[1], build_pc[2], build_pc[3]);
+
             vkCmdBindDescriptorSets(cmd_bufs[i], VK_PIPELINE_BIND_POINT_GRAPHICS,
                                     building_pipeline_layout, 0, 1, &desc_set, 0, nullptr);
             vkCmdBindPipeline(cmd_bufs[i], VK_PIPELINE_BIND_POINT_GRAPHICS, building_pipeline);
@@ -1600,6 +1627,14 @@ int main() {
                     float pan_step = 0.05f * (2.0f / zoom_level);
                     camera_y += pan_step;
                     printf("Camera: pos=(%.2f,%.2f) zoom=%.1f mode=%d\n", camera_x, camera_y, zoom_level, mode);
+                } else if (ev.key.keysym.sym == SDLK_q) {
+                    // Decrease tilt (more top-down)
+                    tilt_angle = clamp_val(tilt_angle - 5.0f, 0.0f, 80.0f);
+                    printf("Tilt: %.1f degrees\n", tilt_angle);
+                } else if (ev.key.keysym.sym == SDLK_e) {
+                    // Increase tilt (more side view)
+                    tilt_angle = clamp_val(tilt_angle + 5.0f, 0.0f, 80.0f);
+                    printf("Tilt: %.1f degrees\n", tilt_angle);
                 }
                 break;
 
@@ -1650,11 +1685,15 @@ int main() {
             float aspect = (float)sw_extent.width / (float)sw_extent.height;
             glm::mat4 proj, view;
 
+            DEBUG_LOG("Camera update: mode=%d, zoom=%.6f, pos=(%.2f,%.2f)", mode, zoom_level, camera_x, camera_y);
+
             if (mode == 2) {
                 // 3D mode: perspective projection with tilt
+                // Buildings are at (x, height, z) where x,z are normalized coords (centered at origin)
+                // Camera should be above buildings in Y (height) direction
                 float fov = 60.0f;
-                float near_plane = 0.1f;
-                float far_plane = 10000.0f;
+                float near_plane = 1.0f;
+                float far_plane = std::max(2000.0f, max_building_height * 10.0f);
 
                 proj = glm::perspective(
                     glm::radians(fov),
@@ -1663,15 +1702,24 @@ int main() {
                     far_plane
                 );
 
-                // View matrix: translate back and tilt
+                // View matrix: camera above buildings looking down
                 float tilt_rad = glm::radians(tilt_angle);
-                float cam_dist = 100.0f / zoom_level;
+                // Distance based on actual building dimensions (in meters)
+                // Camera must be high enough to see the tallest building
+                float building_horizontal_range = std::max(
+                    bldg_max_x - bldg_min_x,
+                    bldg_max_z - bldg_min_z
+                ) * 0.5f;
+                float cam_distance = std::max(building_horizontal_range * 2.5f,
+                                              max_building_height * 2.0f);
+                float cam_height = cam_distance * std::cos(tilt_rad);
+                float cam_offset = cam_distance * std::sin(tilt_rad);
                 glm::vec3 cam_pos(
                     camera_x,
-                    camera_y,
-                    cam_dist / std::cos(tilt_rad)
+                    cam_height,
+                    camera_y + cam_offset
                 );
-                glm::vec3 look_at(camera_x, camera_y, 0.0f);
+                glm::vec3 look_at(camera_x, 0.0f, camera_y);
                 view = glm::lookAt(cam_pos, look_at, glm::vec3(0.0f, 1.0f, 0.0f));
             } else {
                 // 2D mode: orthographic projection
@@ -1694,6 +1742,12 @@ int main() {
             memcpy(ubo_mapped, &proj[0][0], 64);
             memcpy(static_cast<char*>(ubo_mapped) + 64, &view[0][0], 64);
             vkUnmapMemory(device, camera_ubo_mem);
+            
+            DEBUG_LOG("Camera matrices uploaded (mode=%d)", mode);
+            DEBUG_LOG("  proj[0][0]=%.4f proj[1][1]=%.4f proj[2][2]=%.4f", 
+                      proj[0][0], proj[1][1], proj[2][2]);
+            DEBUG_LOG("  view[3][0]=%.2f view[3][1]=%.2f view[3][2]=%.2f",
+                      view[3][0], view[3][1], view[3][2]);
         }
 
         // --- Render ---

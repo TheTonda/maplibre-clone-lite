@@ -17,8 +17,9 @@ layout(location = 0) out vec4 fragColor;
 layout(location = 1) out float fragDepth;
 
 void main() {
-    vec4 worldPos = camera.proj * camera.view * vec4(inPosition, 1.0);
-    gl_Position = worldPos;
-    fragDepth = worldPos.z / worldPos.w;
+    vec4 viewPos = camera.view * vec4(inPosition, 1.0);
+    vec4 clipPos = camera.proj * viewPos;
+    gl_Position = clipPos;
+    fragDepth = clipPos.z / clipPos.w;
     fragColor = pc.buildColor;
 }

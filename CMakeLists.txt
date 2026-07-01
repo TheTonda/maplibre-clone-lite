@@ -121,9 +121,240 @@ add_shader(map-renderer src/shaders/building.vert src/shaders/building.vert.spv)
 add_shader(map-renderer src/shaders/building.frag src/shaders/building.frag.spv)
 
 # Compiler flags
+target_compile_definitions(map-renderer PRIVATE MAP_RENDERER_DEBUG)
 target_compile_options(map-renderer PRIVATE
     -Wall -Wextra -Wpedantic
-    -O2 -DNDEBUG
+    -O2
+)
+
+# Minimal test executable
+add_executable(minimal_test
+    tests/minimal_test.cpp
+)
+
+target_include_directories(minimal_test PRIVATE
+    ${SDL2_INCLUDE_DIRS}
+)
+
+target_link_libraries(minimal_test PRIVATE
+    ${SDL2_LIBRARIES}
+)
+
+target_compile_options(minimal_test PRIVATE
+    -Wall -Wextra -Wpedantic
+    -O2
+)
+
+# Minimal Vulkan test executable
+add_executable(minimal_vulkan
+    tests/minimal_vulkan.cpp
+)
+
+target_include_directories(minimal_vulkan PRIVATE
+    ${SDL2_INCLUDE_DIRS}
+    ${VULKAN_INCLUDE_DIRS}
+)
+
+target_link_libraries(minimal_vulkan PRIVATE
+    ${SDL2_LIBRARIES}
+    ${VULKAN_LIBRARIES}
+)
+
+target_compile_options(minimal_vulkan PRIVATE
+    -Wall -Wextra -Wpedantic
+    -O2
+)
+
+# Step-by-step Vulkan test
+add_executable(step_vulkan
+    tests/step_vulkan.cpp
+)
+
+target_include_directories(step_vulkan PRIVATE
+    ${SDL2_INCLUDE_DIRS}
+    ${VULKAN_INCLUDE_DIRS}
+)
+
+target_link_libraries(step_vulkan PRIVATE
+    ${SDL2_LIBRARIES}
+    ${VULKAN_LIBRARIES}
+)
+
+target_compile_options(step_vulkan PRIVATE
+    -Wall -Wextra -Wpedantic
+    -O2
+)
+
+# Minimal window test
+add_executable(minimal_window
+    tests/minimal_window.cpp
+)
+
+target_include_directories(minimal_window PRIVATE
+    ${SDL2_INCLUDE_DIRS}
+    ${VULKAN_INCLUDE_DIRS}
+)
+
+target_link_libraries(minimal_window PRIVATE
+    ${SDL2_LIBRARIES}
+    ${VULKAN_LIBRARIES}
+)
+
+target_compile_options(minimal_window PRIVATE
+    -Wall -Wextra -Wpedantic
+    -O2
+)
+
+# Building test
+add_executable(building_test
+    tests/building_test.cpp
+)
+
+target_include_directories(building_test PRIVATE
+    src/
+    ${VULKAN_INCLUDE_DIRS}
+    ${SDL2_INCLUDE_DIRS}
+    ${GLM_INCLUDE_DIRS}
+)
+
+target_link_libraries(building_test PRIVATE
+    ${VULKAN_LIBRARIES}
+    ${SDL2_LIBRARIES}
+    ${GLM_LIBRARIES}
+)
+
+target_compile_options(building_test PRIVATE
+    -Wall -Wextra -Wpedantic
+    -O2
+)
+
+# Working triangle test
+add_executable(working_triangle
+    tests/working_triangle.cpp
+)
+
+target_include_directories(working_triangle PRIVATE
+    src/
+    ${VULKAN_INCLUDE_DIRS}
+    ${SDL2_INCLUDE_DIRS}
+    ${GLM_INCLUDE_DIRS}
+)
+
+target_link_libraries(working_triangle PRIVATE
+    ${VULKAN_LIBRARIES}
+    ${SDL2_LIBRARIES}
+    ${GLM_LIBRARIES}
+)
+
+target_compile_options(working_triangle PRIVATE
+    -Wall -Wextra -Wpedantic
+    -O2
+)
+
+# Simple triangle test
+add_executable(simple_triangle
+    tests/simple_triangle.cpp
+)
+
+target_include_directories(simple_triangle PRIVATE
+    ${SDL2_INCLUDE_DIRS}
+    ${VULKAN_INCLUDE_DIRS}
+)
+
+target_link_libraries(simple_triangle PRIVATE
+    ${SDL2_LIBRARIES}
+    ${VULKAN_LIBRARIES}
+)
+
+target_compile_options(simple_triangle PRIVATE
+    -Wall -Wextra -Wpedantic
+    -O2
+)
+
+# Triangle test
+add_executable(triangle_test
+    tests/triangle_test.cpp
+)
+
+target_include_directories(triangle_test PRIVATE
+    ${SDL2_INCLUDE_DIRS}
+    ${VULKAN_INCLUDE_DIRS}
+)
+
+target_link_libraries(triangle_test PRIVATE
+    ${SDL2_LIBRARIES}
+    ${VULKAN_LIBRARIES}
+)
+
+target_compile_options(triangle_test PRIVATE
+    -Wall -Wextra -Wpedantic
+    -O2
+)
+
+target_include_directories(step_vulkan PRIVATE
+    ${SDL2_INCLUDE_DIRS}
+    ${VULKAN_INCLUDE_DIRS}
+)
+
+target_link_libraries(step_vulkan PRIVATE
+    ${SDL2_LIBRARIES}
+    ${VULKAN_LIBRARIES}
+)
+
+target_compile_options(step_vulkan PRIVATE
+    -Wall -Wextra -Wpedantic
+    -O2
+)
+
+target_include_directories(minimal_vulkan PRIVATE
+    ${SDL2_INCLUDE_DIRS}
+    ${VULKAN_INCLUDE_DIRS}
+)
+
+target_link_libraries(minimal_vulkan PRIVATE
+    ${SDL2_LIBRARIES}
+    ${VULKAN_LIBRARIES}
+)
+
+target_compile_options(minimal_vulkan PRIVATE
+    -Wall -Wextra -Wpedantic
+    -O2
+)
+
+target_include_directories(minimal_test PRIVATE
+    ${SDL2_INCLUDE_DIRS}
+)
+
+target_link_libraries(minimal_test PRIVATE
+    ${SDL2_LIBRARIES}
+)
+
+target_compile_options(minimal_test PRIVATE
+    -Wall -Wextra -Wpedantic
+    -O2
+)
+
+# Triangle test executable
+add_executable(test_triangle
+    tests/test_triangle.cpp
+)
+
+target_include_directories(test_triangle PRIVATE
+    src/
+    ${VULKAN_INCLUDE_DIRS}
+    ${SDL2_INCLUDE_DIRS}
+    ${GLM_INCLUDE_DIRS}
+)
+
+target_link_libraries(test_triangle PRIVATE
+    ${VULKAN_LIBRARIES}
+    ${SDL2_LIBRARIES}
+    ${GLM_LIBRARIES}
+)
+
+target_compile_options(test_triangle PRIVATE
+    -Wall -Wextra -Wpedantic
+    -O2
 )
 
 # Copy data files to build directory

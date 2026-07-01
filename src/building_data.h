@@ -105,18 +105,48 @@ inline void extrude_building(
 // ─── Convert all loaded buildings to GPU-ready batches ─────────────────
 
 /// Extract building geometry from loaded OSM data.
+/// Coordinates are normalized so the data center is at (0, 0).
 /// Returns a single BuildingBatch with all buildings merged.
 inline BuildingBatch extract_buildings(const std::vector<osm::Building>& buildings) {
     BuildingBatch batch;
 
+    // First pass: compute bounding box of all building footprints
+    float min_x = 1e9f, min_y = 1e9f;
+    float max_x = -1e9f, max_y = -1e9f;
     for (const auto& b : buildings) {
-        if (b.footprint.size() < 3) continue;
-        DEBUG_LOG("  extract: id=%lld, footprint=%zu, height=%.1f",
-                  (long long)b.id, b.footprint.size(), b.height);
-        extrude_building(b.footprint, b.height, batch.vertices, batch.indices);
+        for (const auto& p : b.footprint) {
+            if (p.x < min_x) min_x = p.x;
+            if (p.y < min_y) min_y = p.y;
+            if (p.x > max_x) max_x = p.x;
+            if (p.y > max_y) max_y = p.y;
+        }
     }
 
-    printf("building_data: %zu vertices, %zu indices across %zu buildings\n",
+    // Compute center for normalization
+    float center_x = (min_x + max_x) * 0.5f;
+    float center_y = (min_y + max_y) * 0.5f;
+
+    DEBUG_LOG("Building data center: (%.1f, %.1f)", center_x, center_y);
+    DEBUG_LOG("Building data range: X(%.0f to %.0f) Y(%.0f to %.0f)",
+              min_x, max_x, min_y, max_y);
+
+    // Second pass: extract buildings with normalized coordinates
+    for (const auto& b : buildings) {
+        if (b.footprint.size() < 3) continue;
+
+        // Normalize footprint to center origin
+        std::vector<osm::MercatorPoint> normalized_footprint;
+        normalized_footprint.reserve(b.footprint.size());
+        for (const auto& p : b.footprint) {
+            normalized_footprint.push_back({p.x - center_x, p.y - center_y});
+        }
+
+        DEBUG_LOG("  extract: id=%lld, footprint=%zu, height=%.1f",
+                  (long long)b.id, b.footprint.size(), b.height);
+        extrude_building(normalized_footprint, b.height, batch.vertices, batch.indices);
+    }
+
+    printf("building_data: %zu vertices, %zu indices across %zu buildings (normalized to origin)\n",
            batch.vertices.size(), batch.indices.size(), buildings.size());
 
     return batch;
