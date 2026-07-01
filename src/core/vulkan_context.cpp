@@ -147,6 +147,10 @@ VulkanContext::VulkanContext(VulkanContext&& other) noexcept
     , render_pass_(other.render_pass_)
     , framebuffers_(std::move(other.framebuffers_))
     , command_pool_(other.command_pool_)
+    , image_available_(std::move(other.image_available_))
+    , render_finished_(std::move(other.render_finished_))
+    , in_flight_fences_(std::move(other.in_flight_fences_))
+    , current_frame_(other.current_frame_)
     , cleanup_performed_(other.cleanup_performed_)
 {
     other.instance_          = VK_NULL_HANDLE;
@@ -160,6 +164,7 @@ VulkanContext::VulkanContext(VulkanContext&& other) noexcept
     other.depth_image_view_  = VK_NULL_HANDLE;
     other.render_pass_       = VK_NULL_HANDLE;
     other.command_pool_      = VK_NULL_HANDLE;
+    other.current_frame_     = 0;
     other.cleanup_performed_ = true;
 }
 
@@ -187,6 +192,10 @@ VulkanContext& VulkanContext::operator=(VulkanContext&& other) noexcept {
         render_pass_       = other.render_pass_;
         framebuffers_      = std::move(other.framebuffers_);
         command_pool_      = other.command_pool_;
+        image_available_   = std::move(other.image_available_);
+        render_finished_   = std::move(other.render_finished_);
+        in_flight_fences_  = std::move(other.in_flight_fences_);
+        current_frame_     = other.current_frame_;
         cleanup_performed_ = other.cleanup_performed_;
 
         other.instance_          = VK_NULL_HANDLE;
@@ -200,6 +209,7 @@ VulkanContext& VulkanContext::operator=(VulkanContext&& other) noexcept {
         other.depth_image_view_  = VK_NULL_HANDLE;
         other.render_pass_       = VK_NULL_HANDLE;
         other.command_pool_      = VK_NULL_HANDLE;
+        other.current_frame_     = 0;
         other.cleanup_performed_ = true;
     }
     return *this;
@@ -224,6 +234,7 @@ void VulkanContext::initialize(Window& window) {
     create_render_pass();
     create_framebuffers();
     create_command_pool();
+    create_sync_objects();
 
     std::fprintf(stdout, "[INFO]  VulkanContext initialised.\n");
 }
@@ -245,6 +256,17 @@ void VulkanContext::cleanup() {
         if (command_pool_ != VK_NULL_HANDLE) {
             vkDestroyCommandPool(device_, command_pool_, nullptr);
         }
+
+        // Sync objects
+        for (auto& s : image_available_)
+            vkDestroySemaphore(device_, s, nullptr);
+        for (auto& s : render_finished_)
+            vkDestroySemaphore(device_, s, nullptr);
+        for (auto& f : in_flight_fences_)
+            vkDestroyFence(device_, f, nullptr);
+        image_available_.clear();
+        render_finished_.clear();
+        in_flight_fences_.clear();
 
         // Depth resources
         if (depth_image_view_  != VK_NULL_HANDLE)
@@ -793,4 +815,153 @@ VulkanContext::query_swapchain_support(VkPhysicalDevice dev,
     vkGetPhysicalDeviceSurfacePresentModesKHR(dev, surface, &n,
                                               d.present_modes.data());
     return d;
+}
+
+// -----------------------------------------------------------------------
+// Sync Objects
+// -----------------------------------------------------------------------
+
+void VulkanContext::create_sync_objects() {
+    image_available_.resize(kMaxFramesInFlight);
+    render_finished_.resize(kMaxFramesInFlight);
+    in_flight_fences_.resize(kMaxFramesInFlight);
+
+    VkSemaphoreCreateInfo sem{};
+    sem.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+    VkFenceCreateInfo fence{};
+    fence.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    fence.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+
+    for (uint32_t i = 0; i < kMaxFramesInFlight; ++i) {
+        if (vkCreateSemaphore(device_, &sem, nullptr, &image_available_[i]) != VK_SUCCESS ||
+            vkCreateSemaphore(device_, &sem, nullptr, &render_finished_[i]) != VK_SUCCESS ||
+            vkCreateFence(device_, &fence, nullptr, &in_flight_fences_[i]) != VK_SUCCESS)
+        {
+            std::fprintf(stderr, "[ERROR] Failed to create sync objects.\n");
+            std::abort();
+        }
+    }
+}
+
+// -----------------------------------------------------------------------
+// Command Buffer Helpers
+// -----------------------------------------------------------------------
+
+VkCommandBuffer VulkanContext::allocate_command_buffer() const {
+    VkCommandBufferAllocateInfo info{};
+    info.sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    info.commandPool        = command_pool_;
+    info.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    info.commandBufferCount = 1;
+
+    VkCommandBuffer buf;
+    vkAllocateCommandBuffers(device_, &info, &buf);
+    return buf;
+}
+
+VkCommandBuffer VulkanContext::begin_one_time_commands() const {
+    auto buf = allocate_command_buffer();
+
+    VkCommandBufferBeginInfo begin{};
+    begin.sType            = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    begin.flags            = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    vkBeginCommandBuffer(buf, &begin);
+    return buf;
+}
+
+void VulkanContext::end_one_time_commands(VkCommandBuffer cmd) const {
+    vkEndCommandBuffer(cmd);
+
+    VkSubmitInfo submit{};
+    submit.sType              = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submit.commandBufferCount = 1;
+    submit.pCommandBuffers    = &cmd;
+
+    vkQueueSubmit(graphics_queue_, 1, &submit, VK_NULL_HANDLE);
+    vkQueueWaitIdle(graphics_queue_);
+
+    vkFreeCommandBuffers(device_, command_pool_, 1, &cmd);
+}
+
+// -----------------------------------------------------------------------
+// Frame Acquisition + Submission
+// -----------------------------------------------------------------------
+
+uint32_t VulkanContext::acquire_next_image() {
+    vkWaitForFences(device_, 1, &in_flight_fences_[current_frame_],
+                    VK_TRUE, UINT64_MAX);
+
+    uint32_t image_index;
+    VkResult result = vkAcquireNextImageKHR(device_, swapchain_, UINT64_MAX,
+                                            image_available_[current_frame_],
+                                            VK_NULL_HANDLE, &image_index);
+    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
+        return ~0u;  // signal swapchain re-creation needed
+    }
+
+    vkResetFences(device_, 1, &in_flight_fences_[current_frame_]);
+    return image_index;
+}
+
+void VulkanContext::submit_frame(uint32_t image_index) {
+    VkCommandBuffer cmd = allocate_command_buffer();
+
+    // Begin recording
+    VkCommandBufferBeginInfo begin{};
+    begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    vkBeginCommandBuffer(cmd, &begin);
+
+    // Begin render pass with clear values
+    VkClearValue clear_values[2];
+    clear_values[0].color        = {{0.06f, 0.06f, 0.07f, 1.0f}};  // dark grey
+    clear_values[1].depthStencil = {1.0f, 0};
+
+    VkRenderPassBeginInfo rp{};
+    rp.sType           = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    rp.renderPass      = render_pass_;
+    rp.framebuffer     = framebuffers_[image_index];
+    rp.renderArea.offset = {0, 0};
+    rp.renderArea.extent = extent_;
+    rp.clearValueCount   = 2;
+    rp.pClearValues      = clear_values;
+
+    vkCmdBeginRenderPass(cmd, &rp, VK_SUBPASS_CONTENTS_INLINE);
+    // (No draw calls yet — renders cleared colour)
+    vkCmdEndRenderPass(cmd);
+    vkEndCommandBuffer(cmd);
+
+    // Submit
+    VkPipelineStageFlags wait_stage =
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+
+    VkSubmitInfo submit{};
+    submit.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submit.waitSemaphoreCount   = 1;
+    submit.pWaitSemaphores      = &image_available_[current_frame_];
+    submit.pWaitDstStageMask    = &wait_stage;
+    submit.signalSemaphoreCount = 1;
+    submit.pSignalSemaphores    = &render_finished_[current_frame_];
+    submit.commandBufferCount   = 1;
+    submit.pCommandBuffers      = &cmd;
+
+    vkQueueSubmit(graphics_queue_, 1, &submit,
+                  in_flight_fences_[current_frame_]);
+
+    // Present
+    VkPresentInfoKHR present{};
+    present.sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+    present.waitSemaphoreCount = 1;
+    present.pWaitSemaphores    = &render_finished_[current_frame_];
+    present.swapchainCount     = 1;
+    present.pSwapchains        = &swapchain_;
+    present.pImageIndices      = &image_index;
+
+    vkQueuePresentKHR(present_queue_, &present);
+
+    // Free command buffer (we allocate a new one each frame for simplicity)
+    vkFreeCommandBuffers(device_, command_pool_, 1, &cmd);
+
+    current_frame_ = (current_frame_ + 1) % kMaxFramesInFlight;
 }

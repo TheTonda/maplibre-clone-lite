@@ -26,17 +26,20 @@ int main() {
     while (!window.should_close()) {
         window.poll_events(input_state);
 
-        if (input_state.switch_2d) {
-            DEBUG_LOG("Switch to 2D mode requested");
-        }
-        if (input_state.switch_3d) {
-            DEBUG_LOG("Switch to 3D mode requested");
-        }
-        if (input_state.zoom_in || input_state.zoom_out) {
-            DEBUG_LOG("Zoom: dt=%.3f", input_state.dt);
+        // Acquire the next swapchain image
+        uint32_t image_index = vk_ctx.acquire_next_image();
+        if (image_index == ~0u) {
+            // Swapchain is out of date — skip this frame
+            input_state.reset_frame_state();
+            continue;
         }
 
-        // TODO: Render frame (Task 4+)
+        // Record + submit draw commands, then present
+        // TODO: in later tasks the Renderer class will inject draw calls
+        //       between cmdBeginRenderPass and cmdEndRenderPass.
+        vk_ctx.submit_frame(image_index);
+
+        input_state.reset_frame_state();
     }
 
     vk_ctx.cleanup();

@@ -46,7 +46,27 @@ public:
     VkFormat                get_depth_format()        const { return depth_format_; }
 
     /// Number of swapchain images.
-    size_t                  get_swapchain_image_count() const { return swapchain_images_.size(); }
+    size_t get_swapchain_image_count() const { return swapchain_images_.size(); }
+
+    /// Current frame-in-flight index (0 or 1).
+    uint32_t get_current_frame() const { return current_frame_; }
+
+    /// Allocate a command buffer from the pool.
+    VkCommandBuffer allocate_command_buffer() const;
+
+    /// Begin a one-time-submit command buffer.
+    VkCommandBuffer begin_one_time_commands() const;
+
+    /// End and submit a one-time-submit command buffer.
+    void end_one_time_commands(VkCommandBuffer cmd) const;
+
+    /// Acquire the next swapchain image index.
+    /// @return The image index, or the special value ~0u on suboptimal/out-of-date.
+    uint32_t acquire_next_image();
+
+    /// Record and submit a draw command buffer for the current framebuffer,
+    /// then present the result.
+    void submit_frame(uint32_t image_index);
 
     /// Swapchain framebuffer at index @p i.
     VkFramebuffer           get_framebuffer(size_t i) const { return framebuffers_[i]; }
@@ -87,6 +107,7 @@ private:
     void create_render_pass();
     void create_framebuffers();
     void create_command_pool();
+    void create_sync_objects();
 
     // Swapchain helpers
     VkSurfaceFormatKHR choose_swapchain_format(
@@ -138,6 +159,13 @@ private:
 
     // Command pool
     VkCommandPool           command_pool_      = VK_NULL_HANDLE;
+
+    // Per-frame sync objects (double-buffered)
+    static constexpr uint32_t kMaxFramesInFlight = 2;
+    std::vector<VkSemaphore> image_available_;
+    std::vector<VkSemaphore> render_finished_;
+    std::vector<VkFence>     in_flight_fences_;
+    uint32_t                 current_frame_    = 0;
 
     bool                    cleanup_performed_ = false;
 
