@@ -1189,6 +1189,161 @@ int main() {
         }
     }
 
+    // --- Ground plane (large flat plane at Y=0) ---
+    VkPipeline ground_pipeline = VK_NULL_HANDLE;
+    VkPipelineLayout ground_pipeline_layout = VK_NULL_HANDLE;
+    VkBuffer ground_vb = VK_NULL_HANDLE;
+    VkDeviceMemory ground_buf_mem = VK_NULL_HANDLE;
+
+    {
+        // Ground plane: 200x200 meters centered at origin
+        // This is much larger than the building area (47m wide)
+        float ground_size = 200.0f;
+        struct GroundVertex {
+            float x, y, z;
+        };
+        std::vector<GroundVertex> ground_verts = {
+            {-ground_size, 0.0f, -ground_size},
+            { ground_size, 0.0f, -ground_size},
+            { ground_size, 0.0f,  ground_size},
+            {-ground_size, 0.0f,  ground_size},
+        };
+        std::vector<uint32_t> ground_indices = {0, 1, 2, 0, 2, 3};
+
+        // Create vertex buffer
+        VkDeviceSize gvb_size = ground_verts.size() * sizeof(GroundVertex);
+        VkBufferCreateInfo gvb_info = {
+            .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+            .size = gvb_size,
+            .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+            .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        };
+        vkCreateBuffer(device, &gvb_info, nullptr, &ground_vb);
+
+        VkMemoryRequirements gvb_mem_req;
+        vkGetBufferMemoryRequirements(device, ground_vb, &gvb_mem_req);
+
+        uint32_t gmem_type = find_host_mem_type(physical, gvb_mem_req.memoryTypeBits);
+        if (gmem_type != UINT32_MAX) {
+            VkMemoryAllocateInfo galloc = {
+                .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+                .allocationSize = gvb_mem_req.size,
+                .memoryTypeIndex = gmem_type,
+            };
+            vkAllocateMemory(device, &galloc, nullptr, &ground_buf_mem);
+            vkBindBufferMemory(device, ground_vb, ground_buf_mem, 0);
+
+            void* gmapped;
+            vkMapMemory(device, ground_buf_mem, 0, gvb_size, 0, &gmapped);
+            memcpy(gmapped, ground_verts.data(), gvb_size);
+            vkUnmapMemory(device, ground_buf_mem);
+        }
+
+        // Create index buffer
+        VkBuffer ground_ib;
+        VkDeviceSize gib_size = ground_indices.size() * sizeof(uint32_t);
+        VkBufferCreateInfo gib_info = {
+            .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+            .size = gib_size,
+            .usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+            .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        };
+        vkCreateBuffer(device, &gib_info, nullptr, &ground_ib);
+        VkMemoryRequirements gib_mem_req;
+        vkGetBufferMemoryRequirements(device, ground_ib, &gib_mem_req);
+
+        // Store ground_ib for later use
+        // (We'll add it to the render command)
+
+        // Create ground pipeline
+        auto gvert_code = load_spv("src/shaders/ground.vert.spv");
+        auto gfrag_code = load_spv("src/shaders/ground.frag.spv");
+
+        if (!gvert_code.empty() && !gfrag_code.empty()) {
+            VkShaderModule gvert_mod = create_shader_module(device, gvert_code);
+            VkShaderModule gfrag_mod = create_shader_module(device, gfrag_code);
+
+            VkPipelineShaderStageCreateInfo gvert_stage = {
+                .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                .stage = VK_SHADER_STAGE_VERTEX_BIT,
+                .module = gvert_mod,
+                .pName = "main",
+            };
+            VkPipelineShaderStageCreateInfo gfrag_stage = {
+                .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+                .module = gfrag_mod,
+                .pName = "main",
+            };
+            VkPipelineShaderStageCreateInfo gstages[] = { gvert_stage, gfrag_stage };
+
+            // Vertex input
+            VkVertexInputBindingDescription g_binding = {
+                .binding = 0,
+                .stride = sizeof(GroundVertex),
+                .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
+            };
+            VkVertexInputAttributeDescription g_attr = {
+                .location = 0,
+                .binding = 0,
+                .format = VK_FORMAT_R32G32B32_SFLOAT,
+                .offset = 0,
+            };
+            VkPipelineVertexInputStateCreateInfo g_vertex_input = {
+                .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+                .vertexBindingDescriptionCount = 1,
+                .pVertexBindingDescriptions = &g_binding,
+                .vertexAttributeDescriptionCount = 1,
+                .pVertexAttributeDescriptions = &g_attr,
+            };
+
+            VkPipelineInputAssemblyStateCreateInfo g_input_assembly = {
+                .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+                .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+                .primitiveRestartEnable = VK_FALSE,
+            };
+
+            // Pipeline layout (descriptor set only, no push constants)
+            VkPipelineLayoutCreateInfo g_layout_info = {
+                .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+                .setLayoutCount = 1,
+                .pSetLayouts = &desc_set_layout,
+            };
+            vkCreatePipelineLayout(device, &g_layout_info, nullptr, &ground_pipeline_layout);
+
+            VkPipelineRasterizationStateCreateInfo g_rasterizer = {
+                .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+                .polygonMode = VK_POLYGON_MODE_FILL,
+                .cullMode = VK_CULL_MODE_NONE,
+                .frontFace = VK_FRONT_FACE_CLOCKWISE,
+            };
+
+            VkGraphicsPipelineCreateInfo g_pipeline_info = {
+                .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+                .stageCount = 2,
+                .pStages = gstages,
+                .pVertexInputState = &g_vertex_input,
+                .pInputAssemblyState = &g_input_assembly,
+                .pViewportState = &viewport_state,
+                .pRasterizationState = &g_rasterizer,
+                .pMultisampleState = &multisample,
+                .pDepthStencilState = &depth_stencil,
+                .pColorBlendState = &color_blend,
+                .layout = ground_pipeline_layout,
+                .renderPass = render_pass,
+                .subpass = 0,
+            };
+
+            if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &g_pipeline_info,
+                                          nullptr, &ground_pipeline) == VK_SUCCESS) {
+                printf("Ground pipeline created.\n");
+            }
+
+            vkDestroyShaderModule(device, gfrag_mod, nullptr);
+            vkDestroyShaderModule(device, gvert_mod, nullptr);
+        }
+    }
+
     // --- Building pipeline (3D extruded buildings) ---
     VkPipeline building_pipeline = VK_NULL_HANDLE;
     VkPipelineLayout building_pipeline_layout = VK_NULL_HANDLE;
@@ -1527,6 +1682,16 @@ int main() {
                                      1, 0, 0, 0);
                 }
             }
+        }
+
+        // Draw ground plane (3D) - only in 3D mode
+        if (mode == 2 && ground_pipeline != VK_NULL_HANDLE) {
+            vkCmdBindDescriptorSets(cmd_bufs[i], VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                    ground_pipeline_layout, 0, 1, &desc_set, 0, nullptr);
+            vkCmdBindPipeline(cmd_bufs[i], VK_PIPELINE_BIND_POINT_GRAPHICS, ground_pipeline);
+            VkDeviceSize goffsets[] = {0};
+            vkCmdBindVertexBuffers(cmd_bufs[i], 0, 1, &ground_vb, goffsets);
+            vkCmdDraw(cmd_bufs[i], 4, 1, 0, 0);  // 4 vertices, no index buffer needed for ground
         }
 
         // Draw buildings (3D) - only in 3D mode
