@@ -259,8 +259,10 @@ int main() {
     // --- Camera variables ---
     float camera_x = 0.0f;
     float camera_y = 0.0f;
+    float camera_distance = 1000.0f;  // Distance from look-at point (in meters)
     float zoom_level = 14.0f;
     float tilt_angle = 45.0f;  // Default tilt to see 3D buildings
+    float rotation_angle = 0.0f;  // Rotation around Y axis (azimuth)
     int mode = 2;
 
     // --- Load OSM data ---
@@ -347,6 +349,15 @@ int main() {
     }
     printf("Building bounds: X(%.0f to %.0f) Y(0 to %.0f) Z(%.0f to %.0f)\n",
            bldg_min_x, bldg_max_x, bldg_max_y, bldg_min_z, bldg_max_z);
+
+    // Calculate initial camera distance based on building dimensions
+    float building_horizontal_range = std::max(
+        bldg_max_x - bldg_min_x,
+        bldg_max_z - bldg_min_z
+    ) * 0.5f;
+    camera_distance = std::max(building_horizontal_range * 2.5f,
+                               max_building_height * 2.0f);
+    printf("Initial camera distance: %.1f meters\n", camera_distance);
 
     // --- Extract 2D fills for parks, water, landuse ---
     style::StyleRule parkRule = styleEngine.matchRule("parks", std::string("fill"));
@@ -1577,8 +1588,9 @@ int main() {
     // ====================================================================
     // Main loop with interactive camera (milestone 7)
     // ====================================================================
-    printf("Rendering. Arrow keys=pan, +/-=zoom, left-drag=pan, scroll=zoom, ESC=quit.\n");
-    printf("Camera: pos=(%.2f,%.2f) zoom=%.1f\n", camera_x, camera_y, zoom_level);
+    printf("Rendering. Arrow keys=pan, +/-=zoom, Q/E=tilt, A/D=rotate, left-drag=pan, scroll=zoom, ESC=quit.\n");
+    printf("Camera: pos=(%.2f,%.2f) dist=%.1f tilt=%.0f rot=%.0f\n",
+           camera_x, camera_y, camera_distance, tilt_angle, rotation_angle);
 
     bool running = true;
     bool mouse_dragging = false;
@@ -1603,38 +1615,62 @@ int main() {
                     mode = 2;
                     printf("Mode: 3D\n");
                 } else if (ev.key.keysym.sym == SDLK_EQUALS || ev.key.keysym.sym == SDLK_PLUS) {
-                    // Zoom in
-                    zoom_level = clamp_val(zoom_level + 1.0f, 2.0f, 18.0f);
-                    printf("Camera: pos=(%.2f,%.2f) zoom=%.1f mode=%d\n", camera_x, camera_y, zoom_level, mode);
+                    // Zoom in (decrease distance in 3D, increase zoom in 2D)
+                    if (mode == 2) {
+                        camera_distance = std::max(camera_distance * 0.9f, 50.0f);
+                    } else {
+                        zoom_level = clamp_val(zoom_level + 1.0f, 2.0f, 18.0f);
+                    }
+                    printf("Camera: pos=(%.2f,%.2f) dist=%.1f zoom=%.1f mode=%d\n",
+                           camera_x, camera_y, camera_distance, zoom_level, mode);
                 } else if (ev.key.keysym.sym == SDLK_MINUS) {
                     // Zoom out
-                    zoom_level = clamp_val(zoom_level - 1.0f, 2.0f, 18.0f);
-                    printf("Camera: pos=(%.2f,%.2f) zoom=%.1f mode=%d\n", camera_x, camera_y, zoom_level, mode);
+                    if (mode == 2) {
+                        camera_distance = std::min(camera_distance * 1.1f, 10000.0f);
+                    } else {
+                        zoom_level = clamp_val(zoom_level - 1.0f, 2.0f, 18.0f);
+                    }
+                    printf("Camera: pos=(%.2f,%.2f) dist=%.1f zoom=%.1f mode=%d\n",
+                           camera_x, camera_y, camera_distance, zoom_level, mode);
                 } else if (ev.key.keysym.sym == SDLK_LEFT) {
                     // Pan left
-                    float pan_step = 0.05f * (2.0f / zoom_level);
+                    float pan_step = (mode == 2) ? camera_distance * 0.05f : 0.05f * (2.0f / zoom_level);
                     camera_x -= pan_step;
-                    printf("Camera: pos=(%.2f,%.2f) zoom=%.1f mode=%d\n", camera_x, camera_y, zoom_level, mode);
+                    printf("Camera: pos=(%.2f,%.2f) dist=%.1f mode=%d\n",
+                           camera_x, camera_y, camera_distance, mode);
                 } else if (ev.key.keysym.sym == SDLK_RIGHT) {
-                    float pan_step = 0.05f * (2.0f / zoom_level);
+                    float pan_step = (mode == 2) ? camera_distance * 0.05f : 0.05f * (2.0f / zoom_level);
                     camera_x += pan_step;
-                    printf("Camera: pos=(%.2f,%.2f) zoom=%.1f mode=%d\n", camera_x, camera_y, zoom_level, mode);
+                    printf("Camera: pos=(%.2f,%.2f) dist=%.1f mode=%d\n",
+                           camera_x, camera_y, camera_distance, mode);
                 } else if (ev.key.keysym.sym == SDLK_UP) {
-                    float pan_step = 0.05f * (2.0f / zoom_level);
+                    float pan_step = (mode == 2) ? camera_distance * 0.05f : 0.05f * (2.0f / zoom_level);
                     camera_y -= pan_step;
-                    printf("Camera: pos=(%.2f,%.2f) zoom=%.1f mode=%d\n", camera_x, camera_y, zoom_level, mode);
+                    printf("Camera: pos=(%.2f,%.2f) dist=%.1f mode=%d\n",
+                           camera_x, camera_y, camera_distance, mode);
                 } else if (ev.key.keysym.sym == SDLK_DOWN) {
-                    float pan_step = 0.05f * (2.0f / zoom_level);
+                    float pan_step = (mode == 2) ? camera_distance * 0.05f : 0.05f * (2.0f / zoom_level);
                     camera_y += pan_step;
-                    printf("Camera: pos=(%.2f,%.2f) zoom=%.1f mode=%d\n", camera_x, camera_y, zoom_level, mode);
+                    printf("Camera: pos=(%.2f,%.2f) dist=%.1f mode=%d\n",
+                           camera_x, camera_y, camera_distance, mode);
                 } else if (ev.key.keysym.sym == SDLK_q) {
                     // Decrease tilt (more top-down)
-                    tilt_angle = clamp_val(tilt_angle - 5.0f, 0.0f, 80.0f);
+                    tilt_angle = clamp_val(tilt_angle - 5.0f, 0.0f, 85.0f);
                     printf("Tilt: %.1f degrees\n", tilt_angle);
                 } else if (ev.key.keysym.sym == SDLK_e) {
                     // Increase tilt (more side view)
-                    tilt_angle = clamp_val(tilt_angle + 5.0f, 0.0f, 80.0f);
+                    tilt_angle = clamp_val(tilt_angle + 5.0f, 0.0f, 85.0f);
                     printf("Tilt: %.1f degrees\n", tilt_angle);
+                } else if (ev.key.keysym.sym == SDLK_a) {
+                    // Rotate left
+                    rotation_angle -= 5.0f;
+                    if (rotation_angle < 0.0f) rotation_angle += 360.0f;
+                    printf("Rotation: %.1f degrees\n", rotation_angle);
+                } else if (ev.key.keysym.sym == SDLK_d) {
+                    // Rotate right
+                    rotation_angle += 5.0f;
+                    if (rotation_angle >= 360.0f) rotation_angle -= 360.0f;
+                    printf("Rotation: %.1f degrees\n", rotation_angle);
                 }
                 break;
 
@@ -1659,22 +1695,41 @@ int main() {
                     last_mouse_x = ev.motion.x;
                     last_mouse_y = ev.motion.y;
 
-                    // Convert pixel delta to clip-space delta
-                    float aspect = (float)sw_extent.width / (float)sw_extent.height;
-                    float visible_half_w = 2.0f / zoom_level;
-                    float pixel_to_clip_x = (2.0f * visible_half_w) / (float)sw_extent.width;
-                    float pixel_to_clip_y = (2.0f * visible_half_w / aspect) / (float)sw_extent.height;
+                    if (mode == 2) {
+                        // 3D mode: pan in world space (meters)
+                        // Scale by camera distance for intuitive feel
+                        float pan_scale = camera_distance * 0.001f;
+                        camera_x -= (float)dx * pan_scale;
+                        camera_y += (float)dy * pan_scale;  // Y inverted for screen coords
+                    } else {
+                        // 2D mode: convert pixel delta to clip-space delta
+                        float aspect = (float)sw_extent.width / (float)sw_extent.height;
+                        float visible_half_w = 2.0f / zoom_level;
+                        float pixel_to_clip_x = (2.0f * visible_half_w) / (float)sw_extent.width;
+                        float pixel_to_clip_y = (2.0f * visible_half_w / aspect) / (float)sw_extent.height;
 
-                    camera_x -= (float)dx * pixel_to_clip_x;
-                    camera_y -= (float)dy * pixel_to_clip_y;
+                        camera_x -= (float)dx * pixel_to_clip_x;
+                        camera_y -= (float)dy * pixel_to_clip_y;
+                    }
                 }
                 break;
 
             case SDL_MOUSEWHEEL:
                 {
-                    float zoom_delta = (ev.wheel.y > 0) ? 1.0f : -1.0f;
-                    zoom_level = clamp_val(zoom_level + zoom_delta, 2.0f, 18.0f);
-                    printf("Camera: pos=(%.2f,%.2f) zoom=%.1f\n", camera_x, camera_y, zoom_level);
+                    if (mode == 2) {
+                        // 3D mode: adjust camera distance
+                        if (ev.wheel.y > 0) {
+                            camera_distance = std::max(camera_distance * 0.9f, 50.0f);
+                        } else {
+                            camera_distance = std::min(camera_distance * 1.1f, 10000.0f);
+                        }
+                        printf("Camera: pos=(%.2f,%.2f) dist=%.1f\n", camera_x, camera_y, camera_distance);
+                    } else {
+                        // 2D mode: adjust zoom level
+                        float zoom_delta = (ev.wheel.y > 0) ? 1.0f : -1.0f;
+                        zoom_level = clamp_val(zoom_level + zoom_delta, 2.0f, 18.0f);
+                        printf("Camera: pos=(%.2f,%.2f) zoom=%.1f\n", camera_x, camera_y, zoom_level);
+                    }
                 }
                 break;
             }
@@ -1704,20 +1759,20 @@ int main() {
 
                 // View matrix: camera above buildings looking down
                 float tilt_rad = glm::radians(tilt_angle);
-                // Distance based on actual building dimensions (in meters)
-                // Camera must be high enough to see the tallest building
-                float building_horizontal_range = std::max(
-                    bldg_max_x - bldg_min_x,
-                    bldg_max_z - bldg_min_z
-                ) * 0.5f;
-                float cam_distance = std::max(building_horizontal_range * 2.5f,
-                                              max_building_height * 2.0f);
-                float cam_height = cam_distance * std::cos(tilt_rad);
-                float cam_offset = cam_distance * std::sin(tilt_rad);
+                float rot_rad = glm::radians(rotation_angle);
+
+                // Camera position using spherical coordinates
+                // tilt_angle: 0 = top-down, 90 = horizontal
+                // rotation_angle: azimuth around Y axis
+                float cam_height = camera_distance * std::cos(tilt_rad);
+                float horizontal_dist = camera_distance * std::sin(tilt_rad);
+                float cam_x_offset = horizontal_dist * std::sin(rot_rad);
+                float cam_z_offset = horizontal_dist * std::cos(rot_rad);
+
                 glm::vec3 cam_pos(
-                    camera_x,
+                    camera_x + cam_x_offset,
                     cam_height,
-                    camera_y + cam_offset
+                    camera_y + cam_z_offset
                 );
                 glm::vec3 look_at(camera_x, 0.0f, camera_y);
                 view = glm::lookAt(cam_pos, look_at, glm::vec3(0.0f, 1.0f, 0.0f));
