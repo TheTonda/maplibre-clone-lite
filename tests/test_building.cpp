@@ -14,9 +14,11 @@ TEST(ExtrudeBuilding, Triangle) {
     std::vector<BuildingVertex> verts;
     std::vector<uint32_t> indices;
     extrude_building(footprint, 10.0f, verts, indices);
-    // 3 top + 3 bottom = 6 vertices
-    EXPECT_EQ(verts.size(), 6u);
-    // Top: 1 tri, Bottom: 1 tri, Sides: 3 quads = 6 tris → 8 triangles = 24 indices
+    // Top: 3 verts, Bottom: 3 verts, Sides: 3 quads × 4 verts = 12 verts
+    // Total: 3 + 3 + 12 = 18 vertices
+    EXPECT_EQ(verts.size(), 18u);
+    // Top: 1 tri, Bottom: 1 tri, Sides: 3 quads × 2 tris = 6 tris
+    // Total: 1 + 1 + 6 = 8 triangles = 24 indices
     EXPECT_EQ(indices.size(), 24u);
 }
 
@@ -25,9 +27,11 @@ TEST(ExtrudeBuilding, Quad) {
     std::vector<BuildingVertex> verts;
     std::vector<uint32_t> indices;
     extrude_building(footprint, 10.0f, verts, indices);
-    // 4 top + 4 bottom = 8 vertices
-    EXPECT_EQ(verts.size(), 8u);
-    // Top: 2 tris, Bottom: 2 tris, Sides: 4 quads = 8 tris → 12 triangles = 36 indices
+    // Top: 4 verts, Bottom: 4 verts, Sides: 4 quads × 4 verts = 16 verts
+    // Total: 4 + 4 + 16 = 24 vertices
+    EXPECT_EQ(verts.size(), 24u);
+    // Top: 2 tris, Bottom: 2 tris, Sides: 4 quads × 2 tris = 8 tris
+    // Total: 2 + 2 + 8 = 12 triangles = 36 indices
     EXPECT_EQ(indices.size(), 36u);
 }
 
@@ -45,10 +49,9 @@ TEST(ExtrudeBuilding, HeightZero) {
     std::vector<BuildingVertex> verts;
     std::vector<uint32_t> indices;
     extrude_building(footprint, 0.0f, verts, indices);
-    // Top Y should equal bottom Y
-    for (size_t i = 0; i < 3; ++i) {
-        EXPECT_NEAR(verts[i].y, 0.0f, 0.001f); // top
-        EXPECT_NEAR(verts[i+3].y, 0.0f, 0.001f); // bottom
+    // Top Y should equal bottom Y (all 18 vertices should have y=0)
+    for (size_t i = 0; i < verts.size(); ++i) {
+        EXPECT_NEAR(verts[i].y, 0.0f, 0.001f);
     }
 }
 
@@ -59,10 +62,10 @@ TEST(ExtrudeBuilding, TopFaceWinding) {
     std::vector<uint32_t> indices;
     extrude_building(footprint, 10.0f, verts, indices);
     // First top vertex is at index 0
-    // Fan triangulation: (0, 2, 4) for triangle
+    // Fan triangulation: (0, 1, 2) for triangle
     EXPECT_EQ(indices[0], 0);
-    EXPECT_EQ(indices[1], 2);
-    EXPECT_EQ(indices[2], 4);
+    EXPECT_EQ(indices[1], 1);
+    EXPECT_EQ(indices[2], 2);
 }
 
 TEST(ExtrudeBuilding, BottomFaceWinding) {
@@ -96,12 +99,13 @@ TEST(ExtrudeBuilding, SideFaceCount) {
 }
 
 TEST(ExtrudeBuilding, VertexCount) {
-    // N-point building → 2N vertices total
+    // N-point building → separate vertices per face
+    // For 4-point footprint: 4 top + 4 bottom + 4*4 side = 24 vertices
     std::vector<MercatorPoint> footprint = {{0,0}, {100,0}, {50,100}, {0,50}};
     std::vector<BuildingVertex> verts;
     std::vector<uint32_t> indices;
     extrude_building(footprint, 10.0f, verts, indices);
-    EXPECT_EQ(verts.size(), 8u); // 4 × 2
+    EXPECT_EQ(verts.size(), 24u); // 4 top + 4 bottom + 4*4 side
 }
 
 TEST(ExtrudeBuilding, HeightApplied) {
@@ -110,13 +114,13 @@ TEST(ExtrudeBuilding, HeightApplied) {
     std::vector<uint32_t> indices;
     extrude_building(footprint, 10.0f, verts, indices);
     // BuildingVertex has (x, y, z) where y is the extrusion height
-    // Top vertices (indices 0, 2, 4) should have y = 10.0
+    // Top vertices (indices 0, 1, 2) should have y = 10.0
     EXPECT_NEAR(verts[0].y, 10.0f, 0.001f);
+    EXPECT_NEAR(verts[1].y, 10.0f, 0.001f);
     EXPECT_NEAR(verts[2].y, 10.0f, 0.001f);
-    EXPECT_NEAR(verts[4].y, 10.0f, 0.001f);
-    // Bottom vertices (indices 1, 3, 5) should have y = 0.0
-    EXPECT_NEAR(verts[1].y, 0.0f, 0.001f);
+    // Bottom vertices (indices 3, 4, 5) should have y = 0.0
     EXPECT_NEAR(verts[3].y, 0.0f, 0.001f);
+    EXPECT_NEAR(verts[4].y, 0.0f, 0.001f);
     EXPECT_NEAR(verts[5].y, 0.0f, 0.001f);
 }
 
@@ -135,7 +139,8 @@ TEST(ExtractBuildings, SingleBuilding) {
     b.footprint = {{0,0}, {100,0}, {50,100}};
     std::vector<Building> buildings = {b};
     auto batch = extract_buildings(buildings);
-    EXPECT_EQ(batch.vertices.size(), 6u);
+    // 3-point footprint: 3 top + 3 bottom + 3*4 side = 18 vertices
+    EXPECT_EQ(batch.vertices.size(), 18u);
     EXPECT_EQ(batch.indices.size(), 24u);
 }
 
@@ -147,8 +152,8 @@ TEST(ExtractBuildings, MultipleBuildings) {
     b2.footprint = {{200,0}, {300,0}, {250,100}};
     std::vector<Building> buildings = {b1, b2};
     auto batch = extract_buildings(buildings);
-    // 2 buildings × 6 vertices = 12
-    EXPECT_EQ(batch.vertices.size(), 12u);
+    // 2 buildings × 18 vertices = 36
+    EXPECT_EQ(batch.vertices.size(), 36u);
     // 2 buildings × 24 indices = 48
     EXPECT_EQ(batch.indices.size(), 48u);
 }
@@ -162,7 +167,7 @@ TEST(ExtractBuildings, SkipInvalid) {
     std::vector<Building> buildings = {b1, b2};
     auto batch = extract_buildings(buildings);
     // Only b1 should be included
-    EXPECT_EQ(batch.vertices.size(), 6u);
+    EXPECT_EQ(batch.vertices.size(), 18u);
     EXPECT_EQ(batch.indices.size(), 24u);
 }
 

@@ -563,18 +563,26 @@ int main() {
         .stride = sizeof(bldg::BuildingVertex),
         .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
     };
-    VkVertexInputAttributeDescription attr = {
-        .location = 0,
-        .binding = 0,
-        .format = VK_FORMAT_R32G32B32_SFLOAT,
-        .offset = 0,
+    VkVertexInputAttributeDescription attrs[2] = {
+        {
+            .location = 0,
+            .binding = 0,
+            .format = VK_FORMAT_R32G32B32_SFLOAT,
+            .offset = offsetof(bldg::BuildingVertex, x),
+        },
+        {
+            .location = 1,
+            .binding = 0,
+            .format = VK_FORMAT_R32G32B32_SFLOAT,
+            .offset = offsetof(bldg::BuildingVertex, nx),
+        }
     };
     VkPipelineVertexInputStateCreateInfo vertex_input = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
         .vertexBindingDescriptionCount = 1,
         .pVertexBindingDescriptions = &binding,
-        .vertexAttributeDescriptionCount = 1,
-        .pVertexAttributeDescriptions = &attr,
+        .vertexAttributeDescriptionCount = 2,
+        .pVertexAttributeDescriptions = attrs,
     };
     
     VkPipelineInputAssemblyStateCreateInfo input_assembly = {

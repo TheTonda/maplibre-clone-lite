@@ -25,7 +25,8 @@ namespace bldg {
 // ─── Vertex format for 3D building geometry ────────────────────────────
 
 struct BuildingVertex {
-    float x, y, z;  // world-space position
+    float x, y, z;      // world-space position
+    float nx, ny, nz;   // surface normal
 };
 
 // ─── A batch of extruded building geometry ready for GPU ───────────────
@@ -40,6 +41,7 @@ struct BuildingBatch {
 /// Extrude a 2D polygon footprint (in Mercator world coords) into a 3D box.
 /// The polygon is treated as a flat ring in the XZ plane (Y is up).
 /// Produces: top face (flat), bottom face (flat), and side faces (one per edge).
+/// Each face has its own vertices with proper normals for correct lighting.
 inline void extrude_building(
     const std::vector<osm::MercatorPoint>& footprint,
     float height,
@@ -54,51 +56,74 @@ inline void extrude_building(
     const float y_top = height;
     const float y_bot = 0.0f;
 
-    uint32_t base = static_cast<uint32_t>(vertices.size());
     uint32_t n = static_cast<uint32_t>(footprint.size());
 
-    // Expand the ring: for each edge, add a slight offset to close gaps
-    // between adjacent buildings (avoids z-fighting)
-    constexpr float GAP = 0.5f;
-
-    // Collect top and bottom vertices
+    // ─── Top face (normal = 0, 1, 0) ────────────────────────────────
+    uint32_t top_base = static_cast<uint32_t>(vertices.size());
     for (uint32_t i = 0; i < n; ++i) {
-        auto& p = footprint[i];
-        vertices.push_back({p.x, y_top, p.y});   // top
-        vertices.push_back({p.x, y_bot, p.y});   // bottom
+        const auto& p = footprint[i];
+        vertices.push_back({p.x, y_top, p.y, 0.0f, 1.0f, 0.0f});
     }
-
-    // Top face: fan triangulation from first top vertex
+    // Fan triangulation (CCW when viewed from above)
     for (uint32_t i = 1; i + 1 < n; ++i) {
-        indices.push_back(base);
-        indices.push_back(base + 2 * i);
-        indices.push_back(base + 2 * (i + 1));
+        indices.push_back(top_base);
+        indices.push_back(top_base + i);
+        indices.push_back(top_base + i + 1);
     }
 
-    // Bottom face: fan triangulation (reversed winding for outward normal)
-    uint32_t bottom_base = base + n;
+    // ─── Bottom face (normal = 0, -1, 0) ────────────────────────────
+    uint32_t bottom_base = static_cast<uint32_t>(vertices.size());
+    for (uint32_t i = 0; i < n; ++i) {
+        const auto& p = footprint[i];
+        vertices.push_back({p.x, y_bot, p.y, 0.0f, -1.0f, 0.0f});
+    }
+    // Fan triangulation (CW when viewed from above = CCW from below)
     for (uint32_t i = 1; i + 1 < n; ++i) {
         indices.push_back(bottom_base);
-        indices.push_back(bottom_base + 2 * (i + 1));
-        indices.push_back(bottom_base + 2 * i);
+        indices.push_back(bottom_base + i + 1);
+        indices.push_back(bottom_base + i);
     }
 
-    // Side faces: one quad per edge (two triangles)
+    // ─── Side faces (one per edge) ──────────────────────────────────
+    // Each side face has its own 4 vertices with normal perpendicular to the edge
     for (uint32_t i = 0; i < n; ++i) {
         uint32_t next = (i + 1) % n;
-        uint32_t t0 = base + 2 * i;       // top-front
-        uint32_t t1 = base + 2 * next;    // top-back
-        uint32_t b0 = base + 2 * i + 1;   // bot-front
-        uint32_t b1 = base + 2 * next + 1; // bot-back
+        const auto& p0 = footprint[i];
+        const auto& p1 = footprint[next];
 
-        // Front face (CW when viewed from outside)
-        indices.push_back(t0);
-        indices.push_back(t1);
-        indices.push_back(b1);
+        // Edge vector in XZ plane
+        float ex = p1.x - p0.x;
+        float ez = p1.y - p0.y;  // footprint.y is Z in world space
 
-        indices.push_back(t0);
-        indices.push_back(b1);
-        indices.push_back(b0);
+        // Outward normal (perpendicular to edge, pointing away from polygon center)
+        // For CCW polygon (standard), normal = (-ez, 0, ex) normalized
+        // But we need to check winding - for now assume CCW
+        float len = std::sqrt(ex * ex + ez * ez);
+        if (len < 1e-6f) continue;  // Degenerate edge
+
+        float nx = -ez / len;
+        float nz = ex / len;
+
+        // Four corners of this side face
+        uint32_t side_base = static_cast<uint32_t>(vertices.size());
+        // Top-front (p0 at top)
+        vertices.push_back({p0.x, y_top, p0.y, nx, 0.0f, nz});
+        // Top-back (p1 at top)
+        vertices.push_back({p1.x, y_top, p1.y, nx, 0.0f, nz});
+        // Bottom-back (p1 at bottom)
+        vertices.push_back({p1.x, y_bot, p1.y, nx, 0.0f, nz});
+        // Bottom-front (p0 at bottom)
+        vertices.push_back({p0.x, y_bot, p0.y, nx, 0.0f, nz});
+
+        // Two triangles forming the quad
+        // CCW when viewed from outside (from the normal direction)
+        indices.push_back(side_base + 0);  // top-front
+        indices.push_back(side_base + 1);  // top-back
+        indices.push_back(side_base + 2);  // bot-back
+
+        indices.push_back(side_base + 0);  // top-front
+        indices.push_back(side_base + 2);  // bot-back
+        indices.push_back(side_base + 3);  // bot-front
     }
 }
 

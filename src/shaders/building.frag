@@ -1,27 +1,26 @@
 #version 450
-// Building fragment shader — flat-shaded with directional lighting.
-// Uses world-space position to compute a simple normal for shading.
+// Building fragment shader — per-vertex normal lighting with ambient + directional.
 
 layout(location = 0) in vec4 fragColor;
 layout(location = 1) in float fragDepth;
+layout(location = 2) in vec3 fragNormal;
 layout(location = 0) out vec4 outColor;
 
 void main() {
-    // Simple ambient + directional lighting
-    vec3 lightDir = normalize(vec3(0.4, 0.8, -0.3));
-    // Approximate normal from depth gradient (works for flat roofs and vertical walls)
-    vec3 normal = normalize(vec3(
-        dFdx(fragDepth) * 100.0,
-        0.1,
-        dFdy(fragDepth) * 100.0
-    ));
-    // If normal is too flat (top face), use up direction
-    if (abs(normal.y) > 0.7) {
-        normal = vec3(0.0, 1.0, 0.0);
-    }
-    float light = max(dot(normal, lightDir), 0.25);
-    // Darken sides slightly more than tops
-    float side_factor = 0.7 + 0.3 * abs(normal.y);
-    vec3 shaded = fragColor.rgb * light * side_factor;
+    // Normalize the interpolated normal
+    vec3 normal = normalize(fragNormal);
+
+    // Directional light from above and slightly to the side
+    vec3 lightDir = normalize(vec3(0.3, 0.85, 0.4));
+
+    // Ambient + diffuse lighting
+    float ambient = 0.35;
+    float diffuse = max(dot(normal, lightDir), 0.0);
+    float light = ambient + diffuse * 0.65;
+
+    // Top faces get a slight brightness boost
+    float top_factor = 0.85 + 0.15 * max(normal.y, 0.0);
+
+    vec3 shaded = fragColor.rgb * light * top_factor;
     outColor = vec4(shaded, fragColor.a);
 }

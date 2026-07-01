@@ -1279,24 +1279,32 @@ int main() {
             };
             VkPipelineShaderStageCreateInfo bstages[] = { bvert_stage, bfrag_stage };
 
-            // Vertex input: binding 0 = vec3 position
+            // Vertex input: binding 0 = vec3 position + vec3 normal
             VkVertexInputBindingDescription b_binding = {
                 .binding = 0,
                 .stride = sizeof(bldg::BuildingVertex),
                 .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
             };
-            VkVertexInputAttributeDescription b_attr = {
-                .location = 0,
-                .binding = 0,
-                .format = VK_FORMAT_R32G32B32_SFLOAT,
-                .offset = 0,
+            VkVertexInputAttributeDescription b_attrs[2] = {
+                {
+                    .location = 0,
+                    .binding = 0,
+                    .format = VK_FORMAT_R32G32B32_SFLOAT,
+                    .offset = offsetof(bldg::BuildingVertex, x),
+                },
+                {
+                    .location = 1,
+                    .binding = 0,
+                    .format = VK_FORMAT_R32G32B32_SFLOAT,
+                    .offset = offsetof(bldg::BuildingVertex, nx),
+                }
             };
             VkPipelineVertexInputStateCreateInfo b_vertex_input = {
                 .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
                 .vertexBindingDescriptionCount = 1,
                 .pVertexBindingDescriptions = &b_binding,
-                .vertexAttributeDescriptionCount = 1,
-                .pVertexAttributeDescriptions = &b_attr,
+                .vertexAttributeDescriptionCount = 2,
+                .pVertexAttributeDescriptions = b_attrs,
             };
 
             VkPipelineInputAssemblyStateCreateInfo b_input_assembly = {
