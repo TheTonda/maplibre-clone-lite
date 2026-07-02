@@ -5,6 +5,7 @@ add_library(engine STATIC
     src/osm_loader.cpp
     src/tile_loader.cpp
     src/tile_cache.cpp
+    src/geometry_builder.cpp
 )
 
 target_include_directories(engine

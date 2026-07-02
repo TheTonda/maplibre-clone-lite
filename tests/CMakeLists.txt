@@ -27,6 +27,9 @@ add_engine_test(test_tile_types)
 # Task 4: Color table
 add_engine_test(test_color_table)
 
+# Task 8: Geometry builder
+add_engine_test(test_geometry_builder)
+
 # Task 7: OSM loader + tile loader
 # Needs absl for protobuf's transitive deps (module-mode protobuf::libprotobuf
 # doesn't propagate them). Link the umbrella absl targets that cover
