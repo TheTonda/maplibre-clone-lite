@@ -17,3 +17,6 @@ endfunction()
 
 # Add placeholder test
 add_engine_test(test_placeholder)
+
+# Task 2: Platform abstraction interface
+add_engine_test(test_platform)
