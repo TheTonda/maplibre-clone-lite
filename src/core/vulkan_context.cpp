@@ -975,7 +975,7 @@ void VulkanContext::submit_frame(uint32_t image_index,
 
     // Begin render pass with clear values
     VkClearValue clear_values[2];
-    clear_values[0].color        = {{0.10f, 0.12f, 0.15f, 1.0f}};  // dark navy-gray
+    clear_values[0].color        = {{0.10f, 0.12f, 0.15f, 1.0f}};  // dark navy
     clear_values[1].depthStencil = {1.0f, 0};
 
     VkRenderPassBeginInfo rp{};

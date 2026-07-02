@@ -1,7 +1,6 @@
 #version 450
 
 // Ground plane vertex shader (2D mode).
-// Renders the ground as a large quad with a subtle grid pattern.
 
 layout(set = 0, binding = 0) uniform CameraUBO {
     mat4 proj;

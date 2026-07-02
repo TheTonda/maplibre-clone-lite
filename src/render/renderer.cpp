@@ -99,6 +99,7 @@ void Renderer::initialize(VulkanContext& ctx) {
     shader_mgr_.load_from_file(shader_path("2d/ground.frag.spv"));
     shader_mgr_.load_from_file(shader_path("2d/fill.vert.spv"));
     shader_mgr_.load_from_file(shader_path("2d/fill.frag.spv"));
+    shader_mgr_.load_from_file(shader_path("2d/road.vert.spv"));
     shader_mgr_.load_from_file(shader_path("3d/building.vert.spv"));
     shader_mgr_.load_from_file(shader_path("3d/building.frag.spv"));
 
@@ -195,6 +196,7 @@ void Renderer::create_ground_pipeline() {
     cfg.attributes        = {attr};
     cfg.depth_test        = VK_FALSE;
     cfg.depth_write       = VK_FALSE;
+    cfg.cull_mode         = VK_CULL_MODE_NONE;  // ground: flat plane, no culling
     cfg.descriptor_layouts = {camera_descriptor_.layout()};
 
     pipeline_mgr_.create_pipeline(cfg);
@@ -227,6 +229,7 @@ void Renderer::create_fill_pipeline() {
     cfg.attributes         = {attr};
     cfg.depth_test         = VK_FALSE;
     cfg.depth_write        = VK_FALSE;
+    cfg.cull_mode          = VK_CULL_MODE_NONE;
     cfg.push_constant_size = 16;   // vec4 color
     cfg.descriptor_layouts = {camera_descriptor_.layout()};
 
@@ -234,13 +237,11 @@ void Renderer::create_fill_pipeline() {
 }
 
 void Renderer::create_road_pipeline() {
-    // Re-use fill shaders for now (road vertices are 3D but rendered in 2D pass).
-    // In later tasks we might add a dedicated road.vert with colour/UV support.
-    VkShaderModule vert = shader_mgr_.load_from_file(shader_path("2d/fill.vert.spv"));
-    VkShaderModule frag = shader_mgr_.load_from_file(shader_path("2d/fill.frag.spv"));
+    VkShaderModule vert = shader_mgr_.load_from_file(shader_path("2d/road.vert.spv"));
+    VkShaderModule frag = shader_mgr_.load_from_file(shader_path("2d/fill.frag.spv"));  // re-use fill frag
     if (!vert || !frag) return;
 
-    // RoadVertex: vec3 pos (used as (x, y=0, z) for 2D ortho)
+    // RoadVertex: vec3 pos
     VkVertexInputBindingDescription binding{};
     binding.binding   = 0;
     binding.stride    = sizeof(RoadVertex);
@@ -260,6 +261,7 @@ void Renderer::create_road_pipeline() {
     cfg.attributes         = {attr};
     cfg.depth_test         = VK_FALSE;
     cfg.depth_write        = VK_FALSE;
+    cfg.cull_mode          = VK_CULL_MODE_NONE;
     cfg.push_constant_size = 16;
     cfg.descriptor_layouts = {camera_descriptor_.layout()};
 
@@ -296,8 +298,9 @@ void Renderer::create_building_pipeline() {
     cfg.fragment_shader    = frag;
     cfg.bindings           = {binding};
     cfg.attributes         = {attrs};
-    cfg.depth_test         = VK_TRUE;
-    cfg.depth_write        = VK_TRUE;
+    cfg.depth_test         = VK_FALSE;  // off in 2D — render order handles layering
+    cfg.depth_write        = VK_FALSE;
+    cfg.cull_mode          = VK_CULL_MODE_NONE;  // winding varies on extrusion
     cfg.push_constant_size = 16;
     cfg.descriptor_layouts = {camera_descriptor_.layout()};
 
@@ -372,6 +375,21 @@ void Renderer::set_geometry(const GeometryData& data) {
 void Renderer::record_draw_commands(VkCommandBuffer cmd, uint32_t /*image_index*/) {
     VkDescriptorSet cam_set = camera_descriptor_.set();
 
+    // ---- Set viewport & scissor (dynamic state in the pipeline) ----
+    VkViewport viewport{};
+    viewport.x        = 0.0f;
+    viewport.y        = 0.0f;
+    viewport.width    = 1280.0f;   // TODO: make dynamic from swapchain
+    viewport.height   = 720.0f;
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport(cmd, 0, 1, &viewport);
+
+    VkRect2D scissor{};
+    scissor.offset = {0, 0};
+    scissor.extent = {1280, 720};
+    vkCmdSetScissor(cmd, 0, 1, &scissor);
+
     // ---- Bind camera descriptor (set 0 for all pipelines) ----
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                             pipeline_mgr_.get_layout("ground_2d"),
@@ -419,7 +437,7 @@ void Renderer::record_draw_commands(VkCommandBuffer cmd, uint32_t /*image_index*
             vkCmdBindIndexBuffer(cmd, fill_ib_.handle(), 0, VK_INDEX_TYPE_UINT32);
 
             // Push constant: white colour
-            struct { float r, g, b, a; } white = {0.9f, 0.9f, 0.9f, 1.0f};
+            struct { float r, g, b, a; } white = {0.85f, 0.90f, 0.82f, 1.0f};  // park green
             vkCmdPushConstants(cmd, fill_layout,
                                VK_SHADER_STAGE_VERTEX_BIT,
                                0, sizeof(white), &white);
@@ -446,7 +464,7 @@ void Renderer::record_draw_commands(VkCommandBuffer cmd, uint32_t /*image_index*
             vkCmdBindVertexBuffers(cmd, 0, 1, vbs, offsets);
             vkCmdBindIndexBuffer(cmd, road_ib_.handle(), 0, VK_INDEX_TYPE_UINT32);
 
-            struct { float r, g, b, a; } road_color = {0.4f, 0.4f, 0.4f, 1.0f};
+            struct { float r, g, b, a; } road_color = {0.45f, 0.45f, 0.48f, 1.0f};  // road grey
             vkCmdPushConstants(cmd, road_layout,
                                VK_SHADER_STAGE_VERTEX_BIT,
                                0, sizeof(road_color), &road_color);
@@ -473,7 +491,7 @@ void Renderer::record_draw_commands(VkCommandBuffer cmd, uint32_t /*image_index*
             vkCmdBindVertexBuffers(cmd, 0, 1, vbs, offsets);
             vkCmdBindIndexBuffer(cmd, building_ib_.handle(), 0, VK_INDEX_TYPE_UINT32);
 
-            struct { float r, g, b, a; } bldg_color = {0.85f, 0.76f, 0.65f, 1.0f};
+            struct { float r, g, b, a; } bldg_color = {0.85f, 0.78f, 0.68f, 1.0f};  // beige
             vkCmdPushConstants(cmd, bldg_layout,
                                VK_SHADER_STAGE_VERTEX_BIT,
                                0, sizeof(bldg_color), &bldg_color);

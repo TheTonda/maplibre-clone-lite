@@ -77,11 +77,11 @@ int main(int argc, char** argv) {
     // Initialise renderer (must happen after VulkanContext is ready)
     renderer.initialize(vk_ctx);
 
-    // Build geometry from OSM data + build ground plane sized to cover the data
-    float ground_half = std::max(
-        std::max(std::abs(data_min_x), std::abs(data_max_x)),
-        std::max(std::abs(data_min_z), std::abs(data_max_z))
-    ) * 1.5f;
+    // Build geometry from OSM data — size ground to data extent
+    float ground_half = std::max({
+        std::abs(data_min_x), std::abs(data_max_x),
+        std::abs(data_min_z), std::abs(data_max_z)
+    }) * 1.2f;
     if (ground_half < 500.0f) ground_half = 500.0f;
 
     GeometryData geo = GeometryBuilder::build_all(osm_data, ground_half);
