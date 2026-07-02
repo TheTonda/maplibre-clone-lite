@@ -64,7 +64,7 @@ static std::vector<uint8_t> make_tile_proto(int buildings, int roads, int polygo
     }
 
     std::string raw;
-    tile.SerializeToString(&raw);
+    [[maybe_unused]] bool ok = tile.SerializeToString(&raw);
     return std::vector<uint8_t>(raw.begin(), raw.end());
 }
 

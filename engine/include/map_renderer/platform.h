@@ -32,7 +32,7 @@ struct GLFunctions {
     void (*glUniformMatrix4fv)(int32_t, int32_t, uint8_t, const float*);
     void (*glUniform4f)(int32_t, float, float, float, float);
     void (*glUniform2f)(int32_t, float, float);
-    void (*glGetUniformLocation)(uint32_t, const char*);
+    int32_t (*glGetUniformLocation)(uint32_t, const char*);
     void (*glClearColor)(float, float, float, float);
     void (*glClear)(uint32_t);
     void (*glViewport)(int32_t, int32_t, int32_t, int32_t);

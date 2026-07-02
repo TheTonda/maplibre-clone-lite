@@ -6,12 +6,14 @@ add_library(engine STATIC
     src/tile_loader.cpp
     src/tile_cache.cpp
     src/geometry_builder.cpp
+    src/renderer.cpp
 )
 
 target_include_directories(engine
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
     PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
         ${PROTO_GEN_DIR}
 )
 
