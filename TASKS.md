@@ -30,7 +30,7 @@ Each task maps 1:1 to spec tasks.
 | # | Status | Task | Commit |
 |---|--------|------|--------|
 | 8 | 🟢 | Geometry builder | cbffc70 |
-| 9 | 🔴 | Shader program | - |
+| 9 | 🟢 | Shader program | 131b2df |
 | 10 | 🔴 | Renderer — GL initialization + tile upload | - |
 | 11 | 🔴 | Renderer — draw loop | - |
 | 12 | 🔴 | Desktop app — window + single-tile render (SDL2) | - |
@@ -68,5 +68,5 @@ Each task maps 1:1 to spec tasks.
 
 ---
 
-**Overall Status:** 8/28 done
+**Overall Status:** 9/28 done
 **Last updated:** 2026-07-03
