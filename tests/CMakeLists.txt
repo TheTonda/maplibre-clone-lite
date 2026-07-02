@@ -23,3 +23,6 @@ add_engine_test(test_platform)
 
 # Task 3: Tile ID + OSM types
 add_engine_test(test_tile_types)
+
+# Task 4: Color table
+add_engine_test(test_color_table)
