@@ -23,7 +23,7 @@ Each task maps 1:1 to spec tasks.
 |---|--------|------|--------|
 | 5 | 🟢 | Protobuf tile schema | dc261eb |
 | 6 | 🟢 | Python preprocessor | 2954e6e |
-| 7 | 🟡 | OSM loader + tile loader (C++) | — linker fail: absl deps |
+| 7 | 🟢 | OSM loader + tile loader (C++) | 89581f7 |
 
 ## Phase 3: Rendering Core
 
@@ -68,5 +68,5 @@ Each task maps 1:1 to spec tasks.
 
 ---
 
-**Overall Status:** 6/28 done, 1 in-progress
+**Overall Status:** 7/28 done
 **Last updated:** 2026-07-03
