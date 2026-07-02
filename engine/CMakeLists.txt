@@ -1,9 +1,10 @@
 # Engine static library
-# Sources are added incrementally as tasks are completed.
 
 add_library(engine STATIC
     src/placeholder.cpp
-    ${PROTO_SRCS}
+    src/osm_loader.cpp
+    src/tile_loader.cpp
+    src/tile_cache.cpp
 )
 
 target_include_directories(engine

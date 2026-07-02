@@ -26,3 +26,17 @@ add_engine_test(test_tile_types)
 
 # Task 4: Color table
 add_engine_test(test_color_table)
+
+# Task 7: OSM loader + tile loader
+# Needs absl for protobuf's transitive deps (module-mode protobuf::libprotobuf
+# doesn't propagate them). Link the umbrella absl targets that cover
+# log_internal_check_op and log_internal_message.
+add_engine_test(test_osm_loader)
+target_link_libraries(test_osm_loader
+    PRIVATE
+        Threads::Threads
+        absl::absl_check
+        absl::absl_log
+        absl::log_internal_check_op
+        absl::log_internal_message
+)

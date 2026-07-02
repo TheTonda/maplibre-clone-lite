@@ -49,6 +49,10 @@ endif()
 # Protobuf
 find_package(Protobuf REQUIRED)
 
+# Abseil — protobuf 35 transitive dependency (module-mode FindProtobuf
+# doesn't propagate it). Needed by any target that uses protobuf headers.
+find_package(absl CONFIG REQUIRED)
+
 # zstd
 find_package(zstd REQUIRED)
 

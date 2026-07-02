@@ -12,18 +12,18 @@ Each task maps 1:1 to spec tasks.
 
 | # | Status | Task | Commit |
 |---|--------|------|--------|
-| 1 | 🔴 | CMake build system + project structure | - |
-| 2 | 🔴 | Platform abstraction interface | - |
-| 3 | 🔴 | Tile ID + OSM types | - |
-| 4 | 🔴 | Color table | - |
+| 1 | 🟢 | CMake build system + project structure | 2eeda08 |
+| 2 | 🟢 | Platform abstraction interface | ca617b3 |
+| 3 | 🟢 | Tile ID + OSM types | 30cc13a |
+| 4 | 🟢 | Color table | 3c62239 |
 
 ## Phase 2: Data Pipeline
 
 | # | Status | Task | Commit |
 |---|--------|------|--------|
-| 5 | 🔴 | Protobuf tile schema | - |
-| 6 | 🔴 | Python preprocessor | - |
-| 7 | 🔴 | OSM loader + tile loader (C++) | - |
+| 5 | 🟢 | Protobuf tile schema | dc261eb |
+| 6 | 🟢 | Python preprocessor | 2954e6e |
+| 7 | 🟡 | OSM loader + tile loader (C++) | — linker fail: absl deps |
 
 ## Phase 3: Rendering Core
 
@@ -68,5 +68,5 @@ Each task maps 1:1 to spec tasks.
 
 ---
 
-**Overall Status:** 0/28 done
+**Overall Status:** 6/28 done, 1 in-progress
 **Last updated:** 2026-07-03

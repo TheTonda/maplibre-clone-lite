@@ -1,5 +1,5 @@
 syntax = "proto3";
-package map_renderer;
+package map_renderer_pb;
 
 // A 2D point in per-tile local ENU meters (float32)
 // x = east, z = north, relative to tile center
