@@ -12,7 +12,8 @@ function(add_engine_test name)
         PRIVATE
             ${PROJECT_SOURCE_DIR}/engine/include
     )
-    add_test(NAME ${name} COMMAND ${name})
+    add_test(NAME ${name} COMMAND ${name}
+        WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
 endfunction()
 
 # Add placeholder test

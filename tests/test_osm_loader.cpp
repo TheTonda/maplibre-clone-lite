@@ -145,19 +145,109 @@ TEST(TileLoaderTest, StartStop) {
     map_renderer::TileLoader loader("data/tiles/new_delhi", cache, 28.589, 77.2375);
     loader.start();
     loader.stop();
-    // Should not crash
     SUCCEED();
 }
 
 TEST(TileLoaderTest, MissingFile) {
     map_renderer::TileCache cache(64);
     map_renderer::TileLoader loader("data/tiles/new_delhi", cache, 28.589, 77.2375);
-    // Request a tile that doesn't exist
     loader.request_tiles({{{8, 9999, 9999}}});
     loader.start();
-    // Give it time to process
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     loader.stop();
-    // Should not crash, tile just won't be in cache
     EXPECT_EQ(cache.size(), 0u);
+}
+
+TEST(TileLoaderTest, LoadsExistingTile) {
+    // New Delhi tiles exist at 12/2923/1706.bin
+    map_renderer::TileCache cache(64);
+    map_renderer::TileLoader loader("data/tiles/new_delhi", cache, 28.589, 77.2375);
+    loader.start();
+    loader.request_tiles({{{12, 2923, 1706}}});
+    // Wait for background loading
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    loader.stop();
+
+    auto tile = cache.get({12, 2923, 1706});
+    ASSERT_NE(tile, nullptr);
+    EXPECT_EQ(tile->id.z, 12u);
+    EXPECT_EQ(tile->id.x, 2923u);
+    EXPECT_EQ(tile->id.y, 1706u);
+    // Should have roads (New Delhi city center at z12)
+    EXPECT_GT(tile->roads.size(), 0u);
+}
+
+TEST(TileLoaderTest, MultipleTileRequests) {
+    map_renderer::TileCache cache(64);
+    map_renderer::TileLoader loader("data/tiles/new_delhi", cache, 28.589, 77.2375);
+    loader.start();
+    loader.request_tiles({{{12, 2923, 1706}, {12, 2923, 1707}, {12, 2924, 1706}}});
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    loader.stop();
+    EXPECT_EQ(cache.size(), 3u);
+}
+
+TEST(TileLoaderTest, CancelRemovesFromQueue) {
+    map_renderer::TileCache cache(64);
+    map_renderer::TileLoader loader("data/tiles/new_delhi", cache, 28.589, 77.2375);
+    // Request tiles, then cancel one
+    loader.request_tiles({{{12, 2923, 1706}, {12, 9999, 9999}}});
+    loader.cancel_tiles({{{12, 9999, 9999}}});
+    loader.start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    loader.stop();
+    // Only the non-cancelled tile should load
+    EXPECT_EQ(cache.size(), 1u);
+    EXPECT_NE(cache.get({12, 2923, 1706}), nullptr);
+}
+
+TEST(TileLoaderTest, DrainRecentInsertsIntegration) {
+    map_renderer::TileCache cache(64);
+    map_renderer::TileLoader loader("data/tiles/new_delhi", cache, 28.589, 77.2375);
+    loader.start();
+    loader.request_tiles({{{12, 2923, 1706}}});
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    loader.stop();
+
+    // drain_recent_inserts should report the loaded tile
+    auto recent = cache.drain_recent_inserts();
+    ASSERT_EQ(recent.size(), 1u);
+    EXPECT_EQ(recent[0], (map_renderer::TileId{12, 2923, 1706}));
+
+    // Second drain should be empty
+    EXPECT_TRUE(cache.drain_recent_inserts().empty());
+}
+
+TEST(TileLoaderTest, DuplicateRequestOnlyLoadsOnce) {
+    map_renderer::TileCache cache(64);
+    map_renderer::TileLoader loader("data/tiles/new_delhi", cache, 28.589, 77.2375);
+    loader.start();
+    // Same tile requested multiple times
+    loader.request_tiles({{{12, 2923, 1706}}});
+    loader.request_tiles({{{12, 2923, 1706}}});
+    loader.request_tiles({{{12, 2923, 1706}}});
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    loader.stop();
+
+    // Should be in cache once
+    auto tile = cache.get({12, 2923, 1706});
+    ASSERT_NE(tile, nullptr);
+    // drain_recent_inserts should report it exactly once
+    auto recent = cache.drain_recent_inserts();
+    EXPECT_EQ(recent.size(), 1u);
+}
+
+TEST(TileLoaderTest, LoadedTileHasWorldOffset) {
+    map_renderer::TileCache cache(64);
+    map_renderer::TileLoader loader("data/tiles/new_delhi", cache, 28.589, 77.2375);
+    loader.start();
+    loader.request_tiles({{{12, 2923, 1706}}});
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    loader.stop();
+
+    auto tile = cache.get({12, 2923, 1706});
+    ASSERT_NE(tile, nullptr);
+    // World offset should be non-zero (tile center away from reference point)
+    EXPECT_NE(tile->world_offset_x, 0.0f);
+    EXPECT_NE(tile->world_offset_z, 0.0f);
 }
