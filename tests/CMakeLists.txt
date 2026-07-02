@@ -30,6 +30,13 @@ add_engine_test(test_color_table)
 # Task 8: Geometry builder
 add_engine_test(test_geometry_builder)
 
+# Task 9: Shader program (embedded GLSL sources)
+add_engine_test(test_shaders)
+target_include_directories(test_shaders
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/engine/src
+)
+
 # Task 7: OSM loader + tile loader
 # Needs absl for protobuf's transitive deps (module-mode protobuf::libprotobuf
 # doesn't propagate them). Link the umbrella absl targets that cover
