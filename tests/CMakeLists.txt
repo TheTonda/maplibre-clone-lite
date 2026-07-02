@@ -20,3 +20,6 @@ add_engine_test(test_placeholder)
 
 # Task 2: Platform abstraction interface
 add_engine_test(test_platform)
+
+# Task 3: Tile ID + OSM types
+add_engine_test(test_tile_types)
