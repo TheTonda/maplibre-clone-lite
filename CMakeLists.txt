@@ -1,0 +1,67 @@
+cmake_minimum_required(VERSION 3.20)
+project(map_renderer VERSION 2.0.0 LANGUAGES C CXX)
+
+# ── C++ standard ──────────────────────────────────────────────────────
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+# ── Compiler flags ────────────────────────────────────────────────────
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    add_compile_options(-Wall -Wextra -Wpedantic)
+endif()
+
+# Allow tests to find engine includes
+include_directories(${CMAKE_SOURCE_DIR}/engine/include)
+
+# ── Dependencies ──────────────────────────────────────────────────────
+
+# GLM (header-only math library)
+include(FetchContent)
+FetchContent_Declare(
+    glm
+    GIT_REPOSITORY https://github.com/g-truc/glm.git
+    GIT_TAG        1.0.1
+)
+FetchContent_MakeAvailable(glm)
+
+# Google Test
+FetchContent_Declare(
+    googletest
+    GIT_REPOSITORY https://github.com/google/googletest.git
+    GIT_TAG        v1.17.0
+)
+set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(googletest)
+
+# GLAD — vendored (pre-generated for OpenGL 3.3 Core)
+add_library(glad_gl_core_33 STATIC
+    engine/src/glad/src/glad.c
+)
+target_include_directories(glad_gl_core_33
+    PUBLIC
+        engine/src/glad/include
+)
+# Suppress pedantic warnings in generated glad.c (ISO C forbids
+# conversion of object pointer to function pointer type)
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(glad_gl_core_33 PRIVATE -Wno-pedantic)
+endif()
+
+# Protobuf
+find_package(Protobuf REQUIRED)
+
+# zstd
+find_package(zstd REQUIRED)
+
+# SDL2 (desktop only)
+find_package(SDL2 REQUIRED)
+
+# OpenGL (desktop only)
+find_package(OpenGL REQUIRED)
+
+# ── Subdirectories ────────────────────────────────────────────────────
+enable_testing()
+add_subdirectory(engine)
+add_subdirectory(desktop_app)
+add_subdirectory(tests)

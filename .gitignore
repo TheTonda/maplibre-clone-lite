@@ -2,6 +2,7 @@
 build/
 _build/
 cmake-build-*/
+CMakeFiles/
 *.o
 *.a
 *.so
@@ -17,9 +18,12 @@ cmake-build-*/
 compile_commands.json
 
 # Data — source PBF and compiled tiles (too large for git)
-data/raw/
-data/intermediate/
-data/tiles/
+data/raw/*
+data/intermediate/*
+data/tiles/*
+!data/raw/.gitkeep
+!data/intermediate/.gitkeep
+!data/tiles/.gitkeep
 
 # Python
 __pycache__/

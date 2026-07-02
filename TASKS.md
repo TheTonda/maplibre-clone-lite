@@ -1,0 +1,72 @@
+# Implementation Task Checklist
+
+Tracking implementation progress against spec/TASKS.md.
+Each task maps 1:1 to spec tasks.
+
+**Status:** 🔴 pending | 🟡 in_progress | 🟢 done  
+**Commit convention:** `feat(<task-id>): <description>`
+
+---
+
+## Phase 1: Engine Foundation
+
+| # | Status | Task | Commit |
+|---|--------|------|--------|
+| 1 | 🔴 | CMake build system + project structure | - |
+| 2 | 🔴 | Platform abstraction interface | - |
+| 3 | 🔴 | Tile ID + OSM types | - |
+| 4 | 🔴 | Color table | - |
+
+## Phase 2: Data Pipeline
+
+| # | Status | Task | Commit |
+|---|--------|------|--------|
+| 5 | 🔴 | Protobuf tile schema | - |
+| 6 | 🔴 | Python preprocessor | - |
+| 7 | 🔴 | OSM loader + tile loader (C++) | - |
+
+## Phase 3: Rendering Core
+
+| # | Status | Task | Commit |
+|---|--------|------|--------|
+| 8 | 🔴 | Geometry builder | - |
+| 9 | 🔴 | Shader program | - |
+| 10 | 🔴 | Renderer — GL initialization + tile upload | - |
+| 11 | 🔴 | Renderer — draw loop | - |
+| 12 | 🔴 | Desktop app — window + single-tile render (SDL2) | - |
+
+## Phase 4: Tiling + Camera
+
+| # | Status | Task | Commit |
+|---|--------|------|--------|
+| 13 | 🔴 | Camera (2D orthographic) | - |
+| 14 | 🔴 | Tile zoom selection + visible tile computation | - |
+| 15 | 🔴 | Tile cache (LRU, thread-safe) | - |
+| 16 | 🔴 | Background tile loading thread | - |
+| 17 | 🔴 | Engine orchestrator + desktop app integration | - |
+
+## Phase 5: Android App
+
+| # | Status | Task | Commit |
+|---|--------|------|--------|
+| 18 | 🔴 | Android Studio project setup | - |
+| 19 | 🔴 | Android platform implementation (EGL + GLES) | - |
+| 20 | 🔴 | Android touch input | - |
+| 21 | 🔴 | Tile data deployment to device | - |
+| 22 | 🔴 | Android app — full render test | - |
+
+## Phase 6: Testing + Optimization
+
+| # | Status | Task | Commit |
+|---|--------|------|--------|
+| 23 | 🔴 | Full test suite | - |
+| 24 | 🔴 | Performance profiling + optimization | - |
+| 25 | 🔴 | India dataset benchmark | - |
+| 26 | 🔴 | Documentation | - |
+| 27 | 🔴 | Cleanup + final verification | - |
+| 28 | 🔴 | Release preparation | - |
+
+---
+
+**Overall Status:** 0/28 done
+**Last updated:** 2026-07-03
