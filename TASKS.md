@@ -29,7 +29,7 @@ Each task maps 1:1 to spec tasks.
 
 | # | Status | Task | Commit |
 |---|--------|------|--------|
-| 8 | 🔴 | Geometry builder | - |
+| 8 | 🟢 | Geometry builder | cbffc70 |
 | 9 | 🔴 | Shader program | - |
 | 10 | 🔴 | Renderer — GL initialization + tile upload | - |
 | 11 | 🔴 | Renderer — draw loop | - |
@@ -68,5 +68,5 @@ Each task maps 1:1 to spec tasks.
 
 ---
 
-**Overall Status:** 7/28 done
+**Overall Status:** 8/28 done
 **Last updated:** 2026-07-03
