@@ -33,7 +33,7 @@ Each task maps 1:1 to spec tasks.
 | 9 | 🟢 | Shader program | 131b2df |
 | 10 | 🟢 | Renderer — GL initialization + tile upload | f5a747d |
 | 11 | 🟢 | Renderer — draw loop | 2a4e806 |
-| 12 | 🔴 | Desktop app — window + single-tile render (SDL2) | - |
+| 12 | 🟢 | Desktop app — window + single-tile render (SDL2) | b5f91be |
 
 ## Phase 4: Tiling + Camera
 
@@ -68,5 +68,5 @@ Each task maps 1:1 to spec tasks.
 
 ---
 
-**Overall Status:** 11/28 done
+**Overall Status:** 12/28 done
 **Last updated:** 2026-07-03
