@@ -85,7 +85,7 @@
 - **Description:** The engine shall apply colors to features based on a hardcoded style table
 - **Acceptance Criteria:**
   - Colors defined in a C++ header (no JSON parsing for v2.0)
-  - Colors for: building, road_primary, road_secondary, water, park, landuse, ground
+  - Colors for: ground, water, park, landuse, building, road, road_primary, road_secondary
   - Colors passable as uniform to the single shader program
   - Future hook: style table structure allows JSON loading in a later version
 
@@ -172,7 +172,7 @@
 - **Priority:** Critical
 - **Description:** The engine core shall contain no platform-specific code
 - **Acceptance Criteria:**
-  - No SDL2, Android, or Linux headers in engine core
+  - No SDL2, Android, Linux, or GL headers in engine core
   - Platform interface defines: GL function loader, surface creation, input injection, file access
   - Desktop app and Android app each implement the platform interface
   - Engine tests run without a window (headless mock platform)
@@ -308,7 +308,7 @@
 - **Acceptance Criteria:**
   - No crashes on missing tiles (skip and continue)
   - No crashes on corrupt tile data (skip and log)
-  - No crashes on GL errors (log and continue in debug, assert in debug)
+  - No crashes on GL errors (log in debug builds, continue execution)
   - Clean shutdown on all platforms
 
 **NFR-4.2: Resource Management**
@@ -396,8 +396,8 @@ v2.0 is ready for release when:
 | Priority | Requirements |
 |----------|-------------|
 | **Critical** | FR-1.1, FR-1.2, FR-1.3, FR-2.1, FR-2.2, FR-3.1, FR-4.1, FR-5.1, FR-5.2, FR-5.3, FR-6.1, FR-6.2, NFR-2.1 |
-| **High** | FR-1.4, FR-2.3, FR-3.2, FR-4.2, FR-4.3, FR-6.3, NFR-1.1, NFR-1.3, NFR-1.4, NFR-2.2, NFR-3.1, NFR-3.2, NFR-4.1, NFR-4.2 |
-| **Medium** | FR-6.4, NFR-1.2 |
+| **High** | FR-1.4, FR-3.2, FR-4.2, FR-4.3, FR-6.3, NFR-1.1, NFR-1.3, NFR-1.4, NFR-2.2, NFR-3.1, NFR-3.2, NFR-4.1, NFR-4.2 |
+| **Medium** | FR-2.3, FR-6.4, NFR-1.2 |
 
 ---
 

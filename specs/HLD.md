@@ -50,6 +50,7 @@ map-renderer-v2/
 │   │   ├── renderer.h              # GL rendering (VAO/VBO/shaders)
 │   │   ├── geometry_builder.h      # Geometry generation (triangulation, road quads)
 │   │   ├── osm_types.h             # Internal data structures
+│   │   ├── osm_loader.h            # Protobuf deserialization interface
 │   │   ├── color_table.h           # Hardcoded feature colors
 │   │   ├── platform.h              # Platform abstraction interface
 │   │   ├── debug_log.h             # DEBUG_LOG macro
@@ -246,7 +247,7 @@ Architecture supports adding zoom levels between these (e.g., 10, 14, 16) withou
 
 ### 4.3 Coordinate System
 
-**Dual coordinate system:**
+**Coordinate systems:**
 
 1. **Tile addressing:** Web Mercator (z/x/y) — standard, well-documented, deterministic tile bounds from lat/lon.
 
@@ -257,7 +258,7 @@ Architecture supports adding zoom levels between these (e.g., 10, 14, 16) withou
 
 3. **World space:** Global ENU meters from a dataset-wide reference point (stored in metadata file).
    - Each tile stores its center as lat/lon (double) in the protobuf header
-   - The renderer converts tile center lat/lon to a global ENU offset
+   - The OSMLoader converts tile center lat/lon to a global ENU offset during deserialization
    - Vertex shader computes: `world_pos = tile_offset + local_pos`
 
 **Why per-tile local ENU?**
@@ -359,7 +360,7 @@ Feature color is set via `glUniform4f` before each draw call. No per-vertex colo
    a. Draw water polygons (blue)
    b. Draw park polygons (green)
    c. Draw landuse polygons (tan)
-   d. Draw road quads (white/gray by type)
+   d. Draw road quads (white for v2.0; per-type colors reserved for future)
    e. Draw building footprints (tan)
 ```
 
@@ -374,7 +375,7 @@ Each tile gets one VBO containing all geometry:
 - Road quad vertices
 - Building footprint vertices (triangulated)
 
-Offsets and counts stored per tile. One VAO, rebind VBO per tile (or use VAO per tile).
+Offsets and counts stored per tile. VAO per tile (each TileData owns its VAO + VBO).
 
 ### 6.4 Render Loop
 
@@ -397,7 +398,7 @@ each frame (Engine::update):
   5. Swap buffers (VSync blocks)
 ```
 
-**Zero allocations in the hot path.** visible_tiles_ is reused (cleared + refilled only when camera dirty). Camera matrices reused. Uniform locations cached at shader load time. GL types cast from uint32_t at the platform boundary.
+**Zero allocations in the hot path.** visible_tiles_ is reused (cleared + refilled only when camera dirty). Camera matrices reused. Uniform locations cached at shader load time. GLFunctions uses standard C++ types (no GL headers in engine core).
 
 ---
 
@@ -417,9 +418,9 @@ Camera visible span → nearest tile zoom level:
 | Visible span (m) | Tile zoom |
 |-------------------|-----------|
 | > 500,000 | 8 |
-| 50,000 - 500,000 | 12 |
-| 5,000 - 50,000 | 15 |
-| < 5,000 | 17 |
+| > 50,000 | 12 |
+| > 5,000 | 15 |
+| ≤ 5,000 | 17 |
 
 When crossing a threshold, the engine requests tiles from the new zoom level. The old level remains visible until the new level is loaded (graceful degradation).
 
@@ -436,7 +437,7 @@ When crossing a threshold, the engine requests tiles from the new zoom level. Th
 - Zero allocations in render loop
 - Matrix recomputation only on camera change (dirty flag)
 - Single shader program (no program switches)
-- ~5-8 draw calls per tile (one per feature type)
+- 5 draw calls per tile (one per feature type)
 
 ### 8.2 Memory
 - LRU tile cache (default 64 tiles, configurable)
@@ -456,7 +457,6 @@ When crossing a threshold, the engine requests tiles from the new zoom level. Th
 
 ### 8.4 CPU
 - Background thread for tile I/O (render thread never blocks)
-- `std::string_view` in data pipeline (no string copies)
 - No JSON parsing at runtime (hardcoded colors)
 - Cached uniform locations (no string lookups per frame)
 

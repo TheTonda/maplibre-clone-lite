@@ -9,7 +9,7 @@
 
 ## Overview
 
-This document breaks down the project into detailed tasks and subtasks. Each task is small enough to be completed in 1-4 hours and has clear acceptance criteria.
+This document breaks down the project into detailed tasks and subtasks. Each task is small enough to be completed in 1-5 hours and has clear acceptance criteria.
 
 **Total Tasks:** 28  
 **Estimated Effort:** 5 to 6 weeks
@@ -221,7 +221,8 @@ This document breaks down the project into detailed tasks and subtasks. Each tas
 **Subtasks:**
 - [ ] Implement `Renderer::initialize()` — store GL functions, compile shader, get uniform locations
 - [ ] Implement `upload_tile_geometry()` — build geometry, create VAO + VBO, upload vertices
-- [ ] Implement `on_tile_loaded()` callback — called by TileLoader, uploads geometry to GPU
+- [ ] Implement `on_tile_loaded()` callback — called by Engine (after polling
+      TileCache::drain_recent_inserts), uploads geometry to GPU on render thread
 - [ ] Implement `on_tile_evicted()` callback — called by TileCache, deletes VAO + VBO
 - [ ] Implement `Renderer::cleanup()` — delete shader program, all VAOs/VBOs
 - [ ] GL_CHECK after every GL call in debug builds
@@ -301,7 +302,7 @@ loop. Do NOT implement camera logic here.
 - [ ] Implement dirty flag (matrices recomputed only on change)
 - [ ] Implement `get_projection_matrix()` and `get_view_matrix()` (cached)
 - [ ] Implement `apply_input()` — process InputData events
-- [ ] Implement `set_dataset_bounds()` and `frame_dataset()`
+- [ ] Implement `set_reference_point()`, `set_dataset_bounds()` and `frame_dataset()`
 - [ ] Write unit tests: matrix correctness, pan/zoom clamping, dirty flag behavior
 
 **Acceptance Criteria:**
@@ -394,6 +395,7 @@ loop. Do NOT implement camera logic here.
 - [ ] Implement `on_resize()` — update viewport
 - [ ] Implement `shutdown()` — stop loader, cleanup renderer, clear cache
 - [ ] Load dataset metadata (ref_lat, ref_lon, bounds) from metadata.bin
+- [ ] Set camera reference point (camera.set_reference_point(ref_lat, ref_lon))
 - [ ] Frame dataset on init (camera.frame_dataset())
 - [ ] Wire desktop_app/main.cpp to call Engine::update() each frame with
       the collected InputData — this completes the interactive pan/zoom

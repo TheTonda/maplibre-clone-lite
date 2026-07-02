@@ -21,7 +21,7 @@ engine/
 │   ├── tile_loader.h           # Background thread: file I/O → zstd → protobuf
 │   ├── renderer.h              # GL rendering: VAO/VBO, shader, draw calls
 │   ├── geometry_builder.h      # Triangulation, road quads
-│   ├── osm_types.h             # Internal data structures (Tile, Building, Road, Polygon)
+│   ├── osm_types.h             # Internal data structures (TileData, Building, Road, PolygonFeature)
 │   ├── osm_loader.h            # Protobuf deserialization
 │   ├── color_table.h           # Hardcoded feature → color mapping
 │   ├── platform.h              # Platform abstraction interface
@@ -69,45 +69,59 @@ tests/
 ### 2.1 Platform Interface (`engine/include/map_renderer/platform.h`)
 
 ```cpp
+#pragma once
+
+#include <cstdint>    // uint32_t, int32_t, intptr_t (GLFunctions types)
+#include <string>     // std::string (PlatformInterface::get_tile_data_path)
+
 namespace map_renderer {
 
 // GL function pointers are app-specific. The app loads them (via GLAD)
 // and passes a struct of needed function pointers to the engine.
+//
+// IMPORTANT: This struct uses standard C++ types (uint32_t, int32_t, etc.)
+// instead of GL types (GLuint, GLsizei, etc.) so that platform.h does NOT
+// need to include any GL headers. This preserves the "no GL headers in
+// engine public headers" rule (FR-5.3, NFR-2.1) and allows headless tests
+// to compile without a GL SDK installed. The app casts GLAD-loaded
+// function pointers to these signatures when filling the struct (e.g.
+// reinterpret_cast<void(*)(int32_t, uint32_t*)>(glGenVertexArrays)) — the
+// types have identical binary representation on all target platforms.
 struct GLFunctions {
     // Core functions needed by the engine
-    void (*glGenVertexArrays)(GLsizei, GLuint*);
-    void (*glDeleteVertexArrays)(GLsizei, const GLuint*);
-    void (*glBindVertexArray)(GLuint);
-    void (*glGenBuffers)(GLsizei, GLuint*);
-    void (*glDeleteBuffers)(GLsizei, const GLuint*);
-    void (*glBindBuffer)(GLenum, GLuint);
-    void (*glBufferData)(GLenum, GLsizeiptr, const void*, GLenum);
-    void (*glEnableVertexAttribArray)(GLuint);
-    void (*glVertexAttribPointer)(GLuint, GLint, GLenum, GLboolean, GLsizei, const void*);
-    void (*glDrawArrays)(GLenum, GLint, GLsizei);
-    void (*glUseProgram)(GLuint);
-    void (*glUniformMatrix4fv)(GLint, GLsizei, GLboolean, const GLfloat*);
-    void (*glUniform4f)(GLint, GLfloat, GLfloat, GLfloat, GLfloat);
-    void (*glUniform2f)(GLint, GLfloat, GLfloat);
-    void (*glGetUniformLocation)(GLuint, const GLchar*);
-    void (*glClearColor)(GLfloat, GLfloat, GLfloat, GLfloat);
-    void (*glClear)(GLbitfield);
-    void (*glViewport)(GLint, GLint, GLsizei, GLsizei);
-    GLuint (*glCreateShader)(GLenum);
-    void (*glShaderSource)(GLuint, GLsizei, const GLchar* const*, const GLint*);
-    void (*glCompileShader)(GLuint);
-    void (*glGetShaderiv)(GLuint, GLenum, GLint*);
-    void (*glGetShaderInfoLog)(GLuint, GLsizei, GLsizei*, GLchar*);
-    void (*glDeleteShader)(GLuint);
-    GLuint (*glCreateProgram)(void);
-    void (*glAttachShader)(GLuint, GLuint);
-    void (*glLinkProgram)(GLuint);
-    void (*glGetProgramiv)(GLuint, GLenum, GLint*);
-    void (*glGetProgramInfoLog)(GLuint, GLsizei, GLsizei*, GLchar*);
-    void (*glDeleteProgram)(GLuint);
-    void (*glEnable)(GLenum);
-    void (*glDisable)(GLenum);
-    GLenum (*glGetError)(void);  // required by GL_CHECK macro
+    void (*glGenVertexArrays)(int32_t, uint32_t*);
+    void (*glDeleteVertexArrays)(int32_t, const uint32_t*);
+    void (*glBindVertexArray)(uint32_t);
+    void (*glGenBuffers)(int32_t, uint32_t*);
+    void (*glDeleteBuffers)(int32_t, const uint32_t*);
+    void (*glBindBuffer)(uint32_t, uint32_t);
+    void (*glBufferData)(uint32_t, intptr_t, const void*, uint32_t);
+    void (*glEnableVertexAttribArray)(uint32_t);
+    void (*glVertexAttribPointer)(uint32_t, int32_t, uint32_t, uint8_t, int32_t, const void*);
+    void (*glDrawArrays)(uint32_t, int32_t, int32_t);
+    void (*glUseProgram)(uint32_t);
+    void (*glUniformMatrix4fv)(int32_t, int32_t, uint8_t, const float*);
+    void (*glUniform4f)(int32_t, float, float, float, float);
+    void (*glUniform2f)(int32_t, float, float);
+    void (*glGetUniformLocation)(uint32_t, const char*);
+    void (*glClearColor)(float, float, float, float);
+    void (*glClear)(uint32_t);
+    void (*glViewport)(int32_t, int32_t, int32_t, int32_t);
+    uint32_t (*glCreateShader)(uint32_t);
+    void (*glShaderSource)(uint32_t, int32_t, const char* const*, const int32_t*);
+    void (*glCompileShader)(uint32_t);
+    void (*glGetShaderiv)(uint32_t, uint32_t, int32_t*);
+    void (*glGetShaderInfoLog)(uint32_t, int32_t, int32_t*, char*);
+    void (*glDeleteShader)(uint32_t);
+    uint32_t (*glCreateProgram)(void);
+    void (*glAttachShader)(uint32_t, uint32_t);
+    void (*glLinkProgram)(uint32_t);
+    void (*glGetProgramiv)(uint32_t, uint32_t, int32_t*);
+    void (*glGetProgramInfoLog)(uint32_t, int32_t, int32_t*, char*);
+    void (*glDeleteProgram)(uint32_t);
+    void (*glEnable)(uint32_t);
+    void (*glDisable)(uint32_t);
+    uint32_t (*glGetError)(void);  // required by GL_CHECK macro
     // ... extend as needed
 };
 
@@ -143,7 +157,7 @@ public:
     // Called by engine when it wants to quit
     virtual void request_quit() = 0;
 
-    // Optional: VSync control
+    // VSync control
     virtual void set_vsync(bool enabled) = 0;
 };
 
@@ -157,7 +171,8 @@ public:
 class DesktopPlatform : public PlatformInterface {
     SDL_Window* window_;
     SDL_GLContext gl_context_;
-    GLFunctions gl_funcs_;  // filled by GLAD loader
+    GLFunctions gl_funcs_;  // filled by GLAD loader (reinterpret_cast to
+                            //   standard-type signatures — see GLFunctions)
     std::string tile_path_;
 
 public:
@@ -350,9 +365,9 @@ struct PolygonFeature {
 };
 
 // NOTE: GPU resource handles use uint32_t (not GLuint/GLsizei) to keep this
-// header free of OpenGL types. The Renderer casts to GLuint/GLsizei at the
-// platform boundary. This preserves the "no GL headers in engine core" rule
-// (FR-5.3, NFR-2.1).
+// header free of OpenGL types. GLFunctions also uses standard C++ types, so
+// no cast is needed when passing these handles to GL function pointers.
+// This preserves the "no GL headers in engine core" rule (FR-5.3, NFR-2.1).
 struct TileData {
     TileId id;
     double center_lat, center_lon;  // for computing world offset
@@ -362,10 +377,10 @@ struct TileData {
     std::vector<Road> roads;
     std::vector<PolygonFeature> polygons;
 
-    // Computed world offset (set by renderer after ENU conversion)
+    // Computed world offset (set by OSMLoader during deserialization)
     float world_offset_x, world_offset_z;
 
-    // GPU resources (owned by renderer, opaque handles — cast to GLuint)
+    // GPU resources (owned by renderer, opaque handles)
     uint32_t vao = 0;
     uint32_t vbo = 0;
 
@@ -556,7 +571,7 @@ private:
     );
 
     // Triangulate a polygon and append vertices to output
-    static void append_triangled_polygon(
+    static void append_triangulated_polygon(
         const std::vector<Point>& polygon,
         std::vector<float>& out_vertices
     );
@@ -568,7 +583,7 @@ private:
 ### 4.2 Ear-Clipping Triangulation
 
 ```
-For a simple polygon (no holes, v1.x spec):
+For a simple polygon (no holes — polygon holes are out of scope for v2.0):
 1. Ensure winding is counter-clockwise (reverse if needed)
 2. While polygon has > 3 vertices:
    a. For each vertex vi:
@@ -646,6 +661,10 @@ public:
     // Input
     void apply_input(const InputData& input, float dt);
 
+    // Set the ENU reference point (from dataset metadata).
+    // Required before get_visible_tiles() can convert world ENU → WGS84.
+    void set_reference_point(double ref_lat, double ref_lon);
+
     // Set dataset bounds (for initial framing and limits)
     void set_dataset_bounds(float min_x, float max_x, float min_z, float max_z);
 
@@ -658,6 +677,9 @@ private:
     float visible_span_ = 50000.0f;  // meters across shorter viewport dim
 
     float min_x_, max_x_, min_z_, max_z_;  // dataset bounds
+
+    double ref_lat_ = 0.0;  // ENU reference point (from metadata)
+    double ref_lon_ = 0.0;
 
     bool dirty_ = true;
 
@@ -713,7 +735,8 @@ below — accurate enough for sub-country spans, identical on both sides.
 
 std::vector<TileId> Camera::get_visible_tiles(uint32_t tile_zoom) const {
     // 1. Convert camera center (x_, z_) from world ENU to lat/lon
-    //    using the inverse formula above (ref_lat/ref_lon from metadata).
+    //    using the inverse formula above (ref_lat_/ref_lon_ set via
+    //    set_reference_point() from dataset metadata).
     // 2. Convert the viewport half-spans to lat/lon deltas using the
     //    same formula, giving the viewport's lat/lon bounding box.
     // 3. Compute tile x/y range from the bounding box:
@@ -798,12 +821,13 @@ private:
     PlatformInterface* platform_;
     const GLFunctions* gl_;
 
-    // Shader program
-    GLuint shader_program_;
-    GLint uniform_proj_;
-    GLint uniform_view_;
-    GLint uniform_color_;
-    GLint uniform_tile_offset_;
+    // Shader program (uint32_t — GLFunctions takes standard types, no
+    // GL header needed in this public header)
+    uint32_t shader_program_;
+    int32_t uniform_proj_;
+    int32_t uniform_view_;
+    int32_t uniform_color_;
+    int32_t uniform_tile_offset_;
 
     // Shader sources (embedded)
     bool compile_shaders();
@@ -899,22 +923,24 @@ void Renderer::render(const Camera& camera, TileCache& cache,
         // Set tile offset uniform
         gl_->glUniform2f(uniform_tile_offset_, tile->world_offset_x, tile->world_offset_z);
 
-        // Bind tile VAO (cast uint32_t handle → GLuint at platform boundary)
-        gl_->glBindVertexArray(static_cast<GLuint>(tile->vao));
+        // Bind tile VAO (tile->vao is already uint32_t, matching GLFunctions)
+        gl_->glBindVertexArray(tile->vao);
 
         // Draw in order: water → parks → landuse → roads → buildings.
-        // Cast uint32_t draw ranges to GL types at the call boundary.
         auto draw_range = [&](const TileData::DrawRange& r, const glm::vec4& color) {
             if (r.count == 0) return;
             gl_->glUniform4f(uniform_color_, color.r, color.g, color.b, color.a);
             gl_->glDrawArrays(GL_TRIANGLES,
-                              static_cast<GLint>(r.offset),
-                              static_cast<GLsizei>(r.count));
+                              static_cast<int32_t>(r.offset),
+                              static_cast<int32_t>(r.count));
         };
 
         draw_range(tile->water_range, get_color("water"));
         draw_range(tile->park_range, get_color("park"));
         draw_range(tile->landuse_range, get_color("landuse"));
+        // v2.0: all roads use the generic "road" color. road_primary and
+        // road_secondary colors are defined in the table for future per-type
+        // rendering (requires splitting road_range by type in GeometryBuilder).
         draw_range(tile->road_range, get_color("road"));
         draw_range(tile->building_range, get_color("building"));
     }
@@ -1005,15 +1031,6 @@ private:
     // so the render loop does zero heap allocation. See section 8.2.
     std::vector<TileId> visible_tiles_;
     std::vector<TileId> prefetch_tiles_;
-
-    // Tiles that have entered the cache since the last frame but have not
-    // yet had their geometry uploaded to the GPU. The Engine drains this
-    // each frame by calling Renderer::on_tile_loaded for each entry.
-    // This is how the on_tile_loaded callback is wired without giving the
-    // loader thread a pointer to the Renderer (which would violate thread
-    // safety — GL calls must happen on the render thread).
-    std::vector<TileId> pending_uploads_;
-    std::mutex pending_uploads_mutex_;
 
     // Dataset metadata
     double ref_lat_, ref_lon_;  // ENU reference point
@@ -1176,12 +1193,12 @@ zstandard==0.22.0
 
 #ifdef MAP_RENDERER_DEBUG
     // GL_CHECK takes a const GLFunctions& so it can be used in any scope,
-    // not just Renderer methods. The GL types (GLenum, GL_NO_ERROR) are
-    // declared in the GL headers that platform.h pulls in via the app.
+    // not just Renderer methods. Uses standard C++ types (no GL headers
+    // needed) — glGetError returns uint32_t, 0 means no error.
     #define GL_CHECK(gl) \
         do { \
-            GLenum err = (gl).glGetError(); \
-            if (err != GL_NO_ERROR) { \
+            uint32_t err = (gl).glGetError(); \
+            if (err != 0) { \
                 DEBUG_LOG("GL error 0x%x at %s:%d", err, __FILE__, __LINE__); \
             } \
         } while (0)
