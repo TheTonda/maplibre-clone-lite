@@ -43,6 +43,10 @@ add_engine_test(test_renderer)
 # Task 13: Camera (2D orthographic)
 add_engine_test(test_camera)
 
+# Task 15: Tile cache (LRU, thread-safe)
+add_engine_test(test_tile_cache)
+target_link_libraries(test_tile_cache PRIVATE Threads::Threads)
+
 # Task 7: OSM loader + tile loader
 # Needs absl for protobuf's transitive deps (module-mode protobuf::libprotobuf
 # doesn't propagate them). Link the umbrella absl targets that cover
