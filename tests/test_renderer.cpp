@@ -7,17 +7,20 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
 #include <glm/glm.hpp>
 
+#include "map_renderer/camera.h"
 #include "map_renderer/osm_types.h"
 #include "map_renderer/platform.h"
 #include "map_renderer/renderer.h"
 #include "map_renderer/tile_cache.h"
 #include "map_renderer/tile_id.h"
 
+using map_renderer::Camera;
 using map_renderer::GLFunctions;
 using map_renderer::PlatformInterface;
 using map_renderer::Point;
@@ -43,6 +46,12 @@ constexpr uint32_t GL_FRAGMENT_SHADER = 0x8B30;
 constexpr uint32_t GL_COMPILE_STATUS = 0x8B81;
 constexpr uint32_t GL_LINK_STATUS = 0x8B82;
 
+struct DrawArraysCall {
+    uint32_t mode = 0;
+    int32_t first = 0;
+    int32_t count = 0;
+};
+
 struct MockState {
     std::vector<uint32_t> created_vaos;
     std::vector<uint32_t> created_vbos;
@@ -52,6 +61,9 @@ struct MockState {
     std::vector<uint32_t> deleted_vbos;
     std::vector<uint32_t> deleted_shaders;
     std::vector<uint32_t> deleted_programs;
+    std::vector<uint32_t> clear_calls;
+    std::vector<uint32_t> use_program_calls;
+    std::vector<DrawArraysCall> draw_arrays_calls;
     uint32_t next_id = 100;       // nonzero so handles look "real"
     int32_t next_uniform = 1;     // nonzero so locations look valid
 
@@ -64,6 +76,9 @@ struct MockState {
         deleted_vbos.clear();
         deleted_shaders.clear();
         deleted_programs.clear();
+        clear_calls.clear();
+        use_program_calls.clear();
+        draw_arrays_calls.clear();
         next_id = 100;
         next_uniform = 1;
     }
@@ -171,13 +186,17 @@ void mock_buffer_data(uint32_t, intptr_t, const void*, uint32_t) {}
 void mock_enable_vertex_attrib_array(uint32_t) {}
 void mock_vertex_attrib_pointer(uint32_t, int32_t, uint32_t, uint8_t,
                                 int32_t, const void*) {}
-void mock_draw_arrays(uint32_t, int32_t, int32_t) {}
-void mock_use_program(uint32_t) {}
+void mock_draw_arrays(uint32_t mode, int32_t first, int32_t count) {
+    g_state.draw_arrays_calls.push_back({mode, first, count});
+}
+void mock_use_program(uint32_t program) {
+    g_state.use_program_calls.push_back(program);
+}
 void mock_uniform_matrix4fv(int32_t, int32_t, uint8_t, const float*) {}
 void mock_uniform4f(int32_t, float, float, float, float) {}
 void mock_uniform2f(int32_t, float, float) {}
 void mock_clear_color(float, float, float, float) {}
-void mock_clear(uint32_t) {}
+void mock_clear(uint32_t mask) { g_state.clear_calls.push_back(mask); }
 void mock_viewport(int32_t, int32_t, int32_t, int32_t) {}
 void mock_shader_source(uint32_t, int32_t, const char* const*, const int32_t*) {}
 void mock_compile_shader(uint32_t) {}
@@ -363,4 +382,64 @@ TEST(RendererTest, GetColorConvertsToGlmVec4) {
     EXPECT_EQ(empty_tile.vbo, 0u);
     EXPECT_TRUE(g_state.deleted_vaos.empty());
     EXPECT_TRUE(g_state.deleted_vbos.empty());
+}
+
+// ── Task 11: render() draw loop ──────────────────────────────────────
+
+TEST(RendererTest, RenderDrawsUploadedTile) {
+    g_state.reset();
+    MockPlatform platform(make_mock_gl());
+    Renderer r;
+    ASSERT_TRUE(r.initialize(platform));
+
+    // Build a tile with one water square and upload its geometry.
+    auto tile = std::make_shared<TileData>();
+    tile->id = TileId{12, 1000, 1500};
+    tile->polygons.push_back(make_water_square());
+    tile->world_offset_x = 100.0f;
+    tile->world_offset_z = 200.0f;
+    r.on_tile_loaded(tile->id, *tile);
+    ASSERT_TRUE(tile->uploaded);
+    ASSERT_EQ(tile->water_range.count, 6u);
+
+    // Insert into the cache so render() can find it.
+    TileCache cache;
+    cache.put(tile->id, tile);
+
+    Camera camera;
+    const std::vector<TileId> visible_tiles = {tile->id};
+
+    r.render(camera, cache, visible_tiles);
+
+    // Frame setup: viewport clear and shader bind recorded.
+    ASSERT_FALSE(g_state.clear_calls.empty());
+    EXPECT_EQ(g_state.clear_calls[0], GL_COLOR_BUFFER_BIT);
+    ASSERT_FALSE(g_state.use_program_calls.empty());
+    EXPECT_EQ(g_state.use_program_calls[0], r.shader_program());
+
+    // One non-empty range (water = 6 verts) -> exactly one draw call.
+    ASSERT_EQ(g_state.draw_arrays_calls.size(), 1u);
+    EXPECT_EQ(g_state.draw_arrays_calls[0].mode, GL_TRIANGLES);
+    EXPECT_EQ(g_state.draw_arrays_calls[0].first, 0);
+    EXPECT_EQ(g_state.draw_arrays_calls[0].count, 6);
+}
+
+TEST(RendererTest, RenderSkipsMissingTile) {
+    g_state.reset();
+    MockPlatform platform(make_mock_gl());
+    Renderer r;
+    ASSERT_TRUE(r.initialize(platform));
+
+    // Cache is empty: the visible tile id is not loaded.
+    TileCache cache;
+    Camera camera;
+    const std::vector<TileId> visible_tiles = {TileId{12, 9999, 9999}};
+
+    // Must not crash.
+    r.render(camera, cache, visible_tiles);
+
+    // Clear + shader bind still happen, but no tile draws.
+    EXPECT_FALSE(g_state.clear_calls.empty());
+    EXPECT_FALSE(g_state.use_program_calls.empty());
+    EXPECT_TRUE(g_state.draw_arrays_calls.empty());
 }

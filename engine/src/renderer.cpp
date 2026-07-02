@@ -48,6 +48,7 @@
 #undef glGetError
 
 #include "map_renderer/color_table.h"
+#include "map_renderer/camera.h"
 #include "map_renderer/debug_log.h"
 #include "map_renderer/geometry_builder.h"
 #include "map_renderer/gl_check.h"
@@ -215,9 +216,63 @@ void Renderer::cleanup() {
     }
 }
 
-void Renderer::render(const Camera& /*camera*/, TileCache& /*cache*/,
-                      const std::vector<TileId>& /*visible_tiles*/) {
-    // STUB — implemented in Task 11.
+void Renderer::render(const Camera& camera, TileCache& cache,
+                      const std::vector<TileId>& visible_tiles) {
+    int vp_w = platform_->get_viewport_width();
+    int vp_h = platform_->get_viewport_height();
+    float aspect = float(vp_w) / float(vp_h);
+
+    gl_->glViewport(0, 0, vp_w, vp_h);
+
+    // Clear with ground color
+    glm::vec4 ground = get_color("ground");
+    gl_->glClearColor(ground.r, ground.g, ground.b, ground.a);
+    gl_->glClear(GL_COLOR_BUFFER_BIT);
+
+    // Get camera matrices (only recomputed if dirty)
+    glm::mat4 proj = camera.get_projection_matrix(aspect);
+    glm::mat4 view = camera.get_view_matrix();
+
+    // Bind shader
+    gl_->glUseProgram(shader_program_);
+    gl_->glUniformMatrix4fv(uniform_proj_, 1, GL_FALSE, &proj[0][0]);
+    gl_->glUniformMatrix4fv(uniform_view_, 1, GL_FALSE, &view[0][0]);
+
+    // Draw each ready tile in draw order.
+    // visible_tiles is provided by Engine (computed only when camera dirty)
+    // — no per-frame allocation here.
+    for (const TileId& tid : visible_tiles) {
+        auto tile = cache.get(tid);
+        if (!tile) continue;  // not loaded yet — skip (stale LOD or blank)
+
+        // Set tile offset uniform
+        gl_->glUniform2f(uniform_tile_offset_,
+                         tile->world_offset_x, tile->world_offset_z);
+
+        // Bind tile VAO (tile->vao is already uint32_t, matching GLFunctions)
+        gl_->glBindVertexArray(tile->vao);
+
+        // Draw in order: water -> parks -> landuse -> roads -> buildings.
+        auto draw_range = [&](const TileData::DrawRange& r,
+                              const glm::vec4& color) {
+            if (r.count == 0) return;
+            gl_->glUniform4f(uniform_color_, color.r, color.g, color.b, color.a);
+            gl_->glDrawArrays(GL_TRIANGLES,
+                              static_cast<int32_t>(r.offset),
+                              static_cast<int32_t>(r.count));
+        };
+
+        draw_range(tile->water_range, get_color("water"));
+        draw_range(tile->park_range, get_color("park"));
+        draw_range(tile->landuse_range, get_color("landuse"));
+        // v2.0: all roads use the generic "road" color. road_primary and
+        // road_secondary colors are defined in the table for future per-type
+        // rendering (requires splitting road_range by type in GeometryBuilder).
+        draw_range(tile->road_range, get_color("road"));
+        draw_range(tile->building_range, get_color("building"));
+    }
+
+    GL_CHECK(*gl_);
 }
 
 void Renderer::draw_tile(const TileData& /*tile*/, const glm::mat4& /*proj*/,

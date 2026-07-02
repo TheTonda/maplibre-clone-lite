@@ -6,6 +6,7 @@ add_library(engine STATIC
     src/tile_loader.cpp
     src/tile_cache.cpp
     src/geometry_builder.cpp
+    src/camera.cpp
     src/renderer.cpp
 )
 
