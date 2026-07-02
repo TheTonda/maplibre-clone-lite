@@ -42,8 +42,6 @@ target_include_directories(glad_gl_core_33
     PUBLIC
         engine/src/glad/include
 )
-# Suppress pedantic warnings in generated glad.c (ISO C forbids
-# conversion of object pointer to function pointer type)
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(glad_gl_core_33 PRIVATE -Wno-pedantic)
 endif()
@@ -60,8 +58,44 @@ find_package(SDL2 REQUIRED)
 # OpenGL (desktop only)
 find_package(OpenGL REQUIRED)
 
+# ── Protobuf codegen ──────────────────────────────────────────────────
+set(PROTO_DIR "${CMAKE_SOURCE_DIR}/tools")
+set(PROTO_FILE "${PROTO_DIR}/osm_data.proto")
+set(PROTO_GEN_DIR "${CMAKE_BINARY_DIR}/generated")
+
+# Generate C++ sources
+set(PROTO_CC  "${PROTO_GEN_DIR}/osm_data.pb.cc")
+set(PROTO_H   "${PROTO_GEN_DIR}/osm_data.pb.h")
+add_custom_command(
+    OUTPUT "${PROTO_CC}" "${PROTO_H}"
+    COMMAND ${Protobuf_PROTOC_EXECUTABLE}
+        --proto_path="${PROTO_DIR}"
+        --cpp_out="${PROTO_GEN_DIR}"
+        "${PROTO_FILE}"
+    DEPENDS "${PROTO_FILE}"
+    COMMENT "Generating C++ protobuf sources"
+)
+
+# Generate Python module
+add_custom_command(
+    OUTPUT "${PROTO_DIR}/osm_data_pb2.py"
+    COMMAND ${Protobuf_PROTOC_EXECUTABLE}
+        --proto_path="${PROTO_DIR}"
+        --python_out="${PROTO_DIR}"
+        "${PROTO_FILE}"
+    DEPENDS "${PROTO_FILE}"
+    COMMENT "Generating Python protobuf module"
+)
+add_custom_target(proto_python ALL
+    DEPENDS "${PROTO_DIR}/osm_data_pb2.py"
+)
+
 # ── Subdirectories ────────────────────────────────────────────────────
 enable_testing()
 add_subdirectory(engine)
 add_subdirectory(desktop_app)
 add_subdirectory(tests)
+
+# ── Add protobuf sources to engine ────────────────────────────────────
+target_sources(engine PRIVATE "${PROTO_CC}")
+target_include_directories(engine PUBLIC "${PROTO_GEN_DIR}")

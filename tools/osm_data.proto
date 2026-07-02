@@ -1,0 +1,67 @@
+syntax = "proto3";
+package map_renderer;
+
+// A 2D point in per-tile local ENU meters (float32)
+// x = east, z = north, relative to tile center
+message Point2D {
+    float x = 1;
+    float z = 2;
+}
+
+// Building footprint (2D for now, height kept for future 3D)
+message Building {
+    int64 id = 1;
+    repeated Point2D footprint = 2;
+    float height_m = 3;  // kept for future 3D, unused in 2D rendering
+}
+
+// Road as a line string
+message Road {
+    int64 id = 1;
+    repeated Point2D line = 2;
+    string type = 3;     // "primary", "secondary", "residential", etc.
+    float width_m = 4;   // road width in meters (fallback: 6.0)
+}
+
+// Filled polygon (park, water, landuse)
+message PolygonFeature {
+    repeated Point2D polygon = 1;
+    string type = 2;     // "park", "water", "landuse"
+}
+
+// A single tile at (z, x, y)
+message Tile {
+    uint32 zoom = 1;
+    uint32 tile_x = 2;
+    uint32 tile_y = 3;
+
+    // Tile center in WGS84 (double precision, for computing world offset)
+    double center_lat = 4;
+    double center_lon = 5;
+
+    // Feature counts for pre-allocation
+    uint32 building_count = 6;
+    uint32 road_count = 7;
+    uint32 polygon_count = 8;
+
+    // Features
+    repeated Building buildings = 9;
+    repeated Road roads = 10;
+    repeated PolygonFeature polygons = 11;  // parks, water, landuse combined
+
+    // Simplification tolerance applied (meters)
+    float simplify_tolerance = 12;
+}
+
+// Dataset metadata (one per region, zstd-compressed → metadata.bin)
+message DatasetMetadata {
+    string name = 1;             // "new_delhi" or "india"
+    double min_lat = 2;
+    double max_lat = 3;
+    double min_lon = 4;
+    double max_lon = 5;
+    double ref_lat = 6;          // ENU reference point
+    double ref_lon = 7;
+    repeated uint32 zoom_levels = 8;  // [8, 12, 15, 17]
+    uint64 total_tiles = 9;
+}
