@@ -40,6 +40,9 @@ target_include_directories(test_shaders
 # Task 10: Renderer — GL initialization + tile upload
 add_engine_test(test_renderer)
 
+# Task 13: Camera (2D orthographic)
+add_engine_test(test_camera)
+
 # Task 7: OSM loader + tile loader
 # Needs absl for protobuf's transitive deps (module-mode protobuf::libprotobuf
 # doesn't propagate them). Link the umbrella absl targets that cover
