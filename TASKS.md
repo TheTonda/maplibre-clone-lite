@@ -39,7 +39,7 @@ Each task maps 1:1 to spec tasks.
 
 | # | Status | Task | Commit |
 |---|--------|------|--------|
-| 13 | 🔴 | Camera (2D orthographic) | - |
+| 13 | 🟢 | Camera (2D orthographic) | 1574ad1 |
 | 14 | 🔴 | Tile zoom selection + visible tile computation | - |
 | 15 | 🔴 | Tile cache (LRU, thread-safe) | - |
 | 16 | 🔴 | Background tile loading thread | - |
@@ -68,5 +68,5 @@ Each task maps 1:1 to spec tasks.
 
 ---
 
-**Overall Status:** 12/28 done
+**Overall Status:** 13/28 done
 **Last updated:** 2026-07-03
