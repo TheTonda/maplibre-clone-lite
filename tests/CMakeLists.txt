@@ -48,6 +48,10 @@ add_engine_test(test_camera)
 add_engine_test(test_tile_cache)
 target_link_libraries(test_tile_cache PRIVATE Threads::Threads)
 
+# Task 17: Engine orchestrator
+add_engine_test(test_engine)
+target_link_libraries(test_engine PRIVATE Threads::Threads)
+
 # Task 7: OSM loader + tile loader
 # Needs absl for protobuf's transitive deps (module-mode protobuf::libprotobuf
 # doesn't propagate them). Link the umbrella absl targets that cover

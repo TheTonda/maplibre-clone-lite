@@ -1,27 +1,16 @@
 // Desktop application — SDL2 + OpenGL 3.3 Core + GLAD
-// Task 12: window + single-tile render + input collection.
-// Pan/zoom/camera integration deferred to Task 17.
+// Task 12: window + input collection. Task 17: Engine orchestrator integration.
 
 #include <SDL2/SDL.h>
 #include <glad/glad.h>
 
 #include <cstdint>
 #include <cstdio>
-#include <fstream>
 #include <string>
 #include <vector>
 
-#include <zstd.h>
-
-#include "map_renderer/camera.h"
-#include "map_renderer/debug_log.h"
-#include "map_renderer/osm_loader.h"
+#include "map_renderer/engine.h"
 #include "map_renderer/platform.h"
-#include "map_renderer/renderer.h"
-#include "map_renderer/tile_cache.h"
-#include "map_renderer/tile_id.h"
-#include "map_renderer/tile_loader.h"
-#include "osm_data.pb.h"
 
 using namespace map_renderer;
 
@@ -207,39 +196,6 @@ private:
 };
 
 // ──────────────────────────────────────────────────────────────────────
-// Metadata loading
-// ──────────────────────────────────────────────────────────────────────
-
-static bool load_metadata(const std::string& dir, double& ref_lat, double& ref_lon) {
-    std::string meta_path = dir + "/metadata.bin";
-    std::ifstream f(meta_path, std::ios::binary | std::ios::ate);
-    if (!f.is_open()) return false;
-
-    auto size = f.tellg();
-    f.seekg(0);
-    std::vector<uint8_t> compressed(static_cast<size_t>(size));
-    f.read(reinterpret_cast<char*>(compressed.data()), size);
-    f.close();
-
-    auto decomp_size = ZSTD_getFrameContentSize(compressed.data(), compressed.size());
-    if (decomp_size == ZSTD_CONTENTSIZE_ERROR || decomp_size == ZSTD_CONTENTSIZE_UNKNOWN)
-        return false;
-
-    std::vector<uint8_t> decompressed(static_cast<size_t>(decomp_size));
-    if (ZSTD_isError(ZSTD_decompress(decompressed.data(), decompressed.size(),
-                                     compressed.data(), compressed.size())))
-        return false;
-
-    map_renderer_pb::DatasetMetadata meta;
-    if (!meta.ParseFromArray(decompressed.data(), static_cast<int>(decompressed.size())))
-        return false;
-
-    ref_lat = meta.ref_lat();
-    ref_lon = meta.ref_lon();
-    return true;
-}
-
-// ──────────────────────────────────────────────────────────────────────
 // Main
 // ──────────────────────────────────────────────────────────────────────
 
@@ -252,58 +208,28 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    double ref_lat = 28.589, ref_lon = 77.2375;
-    if (!load_metadata(tile_path, ref_lat, ref_lon)) {
-        std::fprintf(stderr, "No metadata.bin found, using defaults\n");
-    }
-
-    Renderer renderer;
-    if (!renderer.initialize(platform)) {
-        std::fprintf(stderr, "Renderer initialize failed\n");
+    Engine engine;
+    if (!engine.initialize(platform, tile_path)) {
+        std::fprintf(stderr, "Engine initialize failed\n");
         return 1;
     }
 
-    TileCache cache(64);
-    TileLoader loader(tile_path, cache, ref_lat, ref_lon);
-    Camera camera;  // stub — Task 17 wires this properly
-
-    // Request a test tile
-    // Try to load one that exists
-    TileId test_tile{12, 2923, 1706};
-    std::vector<TileId> visible_tiles = {test_tile};
-
-    loader.start();
-    loader.request_tiles(visible_tiles);
-
     std::fprintf(stderr, "Map Renderer started. ESC to quit.\n");
 
-    // Main loop
-    while (!platform.should_quit()) {
+    // Main loop — Engine handles camera, tile loading, rendering
+    Uint32 last_ticks = SDL_GetTicks();
+    while (!platform.should_quit() && !engine.should_quit()) {
         std::vector<InputData> events;
         platform.poll_events(events);
 
-        for (const auto& e : events) {
-            if (e.type == InputEvent::KeyQuit) {
-                goto done;
-            }
-        }
+        Uint32 now = SDL_GetTicks();
+        float dt = static_cast<float>(now - last_ticks) / 1000.0f;
+        last_ticks = now;
 
-        // Drain recently loaded tiles and upload to GPU
-        auto recent = cache.drain_recent_inserts();
-        for (const auto& id : recent) {
-            auto tile = cache.get(id);
-            if (tile && !tile->uploaded) {
-                renderer.on_tile_loaded(id, *tile);
-            }
-        }
-
-        // Render
-        renderer.render(camera, cache, visible_tiles);
+        engine.update(events, dt);
         platform.swap_buffers();
     }
 
-done:
-    loader.stop();
-    renderer.cleanup();
+    engine.shutdown();
     return 0;
 }
