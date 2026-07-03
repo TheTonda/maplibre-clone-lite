@@ -32,6 +32,7 @@ public:
     glm::mat4 get_view_matrix() const;
     bool is_dirty() const;
     void clear_dirty();
+    void mark_dirty();
 
     // Current state
     float get_x() const;

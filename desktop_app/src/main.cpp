@@ -76,6 +76,14 @@ public:
             case SDL_QUIT:
                 quit_ = true;
                 break;
+            case SDL_WINDOWEVENT:
+                if (e.window.event == SDL_WINDOWEVENT_RESIZED ||
+                    e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
+                    width_ = e.window.data1;
+                    height_ = e.window.data2;
+                    resized_ = true;
+                }
+                break;
             case SDL_KEYDOWN: {
                 auto key = e.key.keysym.sym;
                 InputData d{};
@@ -147,6 +155,7 @@ public:
     void set_vsync(bool enabled) override { SDL_GL_SetSwapInterval(enabled ? 1 : 0); }
 
     bool should_quit() const { return quit_; }
+    bool consume_resize() { bool r = resized_; resized_ = false; return r; }
 
 private:
     SDL_Window* window_ = nullptr;
@@ -155,6 +164,7 @@ private:
     std::string tile_path_;
     int width_ = 0, height_ = 0;
     bool quit_ = false;
+    bool resized_ = false;
 
     void fill_gl_functions() {
         #define F(name) gl_funcs_.name = reinterpret_cast<decltype(gl_funcs_.name)>(glad_##name)
@@ -221,6 +231,11 @@ int main(int argc, char* argv[]) {
     while (!platform.should_quit() && !engine.should_quit()) {
         std::vector<InputData> events;
         platform.poll_events(events);
+
+        if (platform.consume_resize()) {
+            engine.on_resize(platform.get_viewport_width(),
+                             platform.get_viewport_height());
+        }
 
         Uint32 now = SDL_GetTicks();
         float dt = static_cast<float>(now - last_ticks) / 1000.0f;

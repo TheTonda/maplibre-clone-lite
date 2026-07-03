@@ -97,9 +97,10 @@ void Engine::update(const std::vector<InputData>& input_events, float dt) {
 }
 
 void Engine::on_resize(int /*width*/, int /*height*/) {
-    // Viewport size is read from platform on each render call
-    // Mark camera dirty so matrices get recomputed with new aspect
-    camera_.clear_dirty();  // force re-dirty on next input
+    // Viewport dimensions changed — force camera to recompute matrices
+    // and visible tile set next frame. The platform's get_viewport_width/height()
+    // returns the new size; the camera reads it via the platform.
+    camera_.mark_dirty();
 }
 
 bool Engine::should_quit() const {
@@ -137,33 +138,34 @@ void Engine::load_metadata(const std::string& dataset_name) {
 
     auto decomp_size = ZSTD_getFrameContentSize(compressed.data(), compressed.size());
     if (decomp_size == ZSTD_CONTENTSIZE_ERROR || decomp_size == ZSTD_CONTENTSIZE_UNKNOWN) {
-        DEBUG_LOG("Invalid zstd frame in metadata.bin");
+        DEBUG_LOG("%s", "Invalid zstd frame in metadata.bin");
         return;
     }
 
     std::vector<uint8_t> decompressed(static_cast<size_t>(decomp_size));
     if (ZSTD_isError(ZSTD_decompress(decompressed.data(), decompressed.size(),
                                      compressed.data(), compressed.size()))) {
-        DEBUG_LOG("zstd decompression error in metadata.bin");
+        DEBUG_LOG("%s", "zstd decompression error in metadata.bin");
         return;
     }
 
     map_renderer_pb::DatasetMetadata meta;
     if (!meta.ParseFromArray(decompressed.data(), static_cast<int>(decompressed.size()))) {
-        DEBUG_LOG("Failed to parse metadata protobuf");
+        DEBUG_LOG("%s", "Failed to parse metadata protobuf");
         return;
     }
 
     ref_lat_ = meta.ref_lat();
     ref_lon_ = meta.ref_lon();
 
-    // Convert lat/lon bounds to world ENU
-    float temp;
-    lat_lon_to_xy(meta.min_lat(), meta.min_lon(), ref_lat_, ref_lon_, min_x_, temp);
-    lat_lon_to_xy(meta.min_lat(), meta.min_lon(), ref_lat_, ref_lon_, temp, min_z_);
-    // We need proper min/max for each dimension — compute corners
-    lat_lon_to_xy(meta.max_lat(), meta.min_lon(), ref_lat_, ref_lon_, max_x_, temp);
-    lat_lon_to_xy(meta.min_lat(), meta.max_lon(), ref_lat_, ref_lon_, temp, max_z_);
+    // Convert lat/lon bounds to world ENU.
+    // x depends on lon only (R * cos(ref_lat) * Δlon).
+    // z depends on lat only (R * Δlat).
+    float unused;
+    lat_lon_to_xy(ref_lat_, meta.min_lon(), ref_lat_, ref_lon_, min_x_, unused);
+    lat_lon_to_xy(ref_lat_, meta.max_lon(), ref_lat_, ref_lon_, max_x_, unused);
+    lat_lon_to_xy(meta.min_lat(), ref_lon_, ref_lat_, ref_lon_, unused, min_z_);
+    lat_lon_to_xy(meta.max_lat(), ref_lon_, ref_lat_, ref_lon_, unused, max_z_);
 
     // Ensure min < max
     if (min_x_ > max_x_) std::swap(min_x_, max_x_);

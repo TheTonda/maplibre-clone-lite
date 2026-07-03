@@ -251,8 +251,8 @@ glm::mat4 Camera::get_view_matrix() const {
 }
 
 bool Camera::is_dirty() const { return dirty_; }
-
 void Camera::clear_dirty() { dirty_ = false; }
+void Camera::mark_dirty() { dirty_ = true; }
 
 float Camera::get_x() const { return x_; }
 float Camera::get_z() const { return z_; }

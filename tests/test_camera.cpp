@@ -58,6 +58,14 @@ TEST(CameraTest, ClearDirty) {
     EXPECT_FALSE(c.is_dirty());
 }
 
+TEST(CameraTest, MarkDirty) {
+    Camera c;
+    c.clear_dirty();
+    EXPECT_FALSE(c.is_dirty());
+    c.mark_dirty();
+    EXPECT_TRUE(c.is_dirty());
+}
+
 TEST(CameraTest, SetPositionSetsDirty) {
     Camera c;
     c.clear_dirty();

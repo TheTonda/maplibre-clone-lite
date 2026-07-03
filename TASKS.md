@@ -43,7 +43,7 @@ Each task maps 1:1 to spec tasks.
 | 14 | 🟢 | Tile zoom selection + visible tile computation | 1574ad1 |
 | 15 | 🟢 | Tile cache (LRU, thread-safe) | 8e6b778 |
 | 16 | 🟢 | Background tile loading thread | 08253ff |
-| 17 | 🔴 | Engine orchestrator + desktop app integration | - |
+| 17 | 🟢 | Engine orchestrator + desktop app integration | - |
 
 ## Phase 5: Android App
 
@@ -68,5 +68,5 @@ Each task maps 1:1 to spec tasks.
 
 ---
 
-**Overall Status:** 16/28 done
+**Overall Status:** 17/28 done
 **Last updated:** 2026-07-03
