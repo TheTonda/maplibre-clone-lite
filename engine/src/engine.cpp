@@ -57,10 +57,17 @@ bool Engine::initialize(PlatformInterface& platform, const std::string& dataset_
             renderer_->on_tile_evicted(id, tile);
         });
 
-    // Set camera reference point and bounds
+    // Set camera reference point and bounds, then frame the dataset
     camera_.set_reference_point(ref_lat_, ref_lon_);
     camera_.set_dataset_bounds(min_x_, max_x_, min_z_, max_z_);
     camera_.frame_dataset();
+
+    // Zoom in to a practical starting level where roads are visible.
+    // frame_dataset() shows the whole dataset (~50 km for New Delhi) which
+    // makes 6 m roads sub-pixel. Target ~2 km span: roads ≈ 3 px at 1024 px.
+    while (camera_.get_visible_span() > 2000.0f) {
+        camera_.zoom_by(0.8f);
+    }
 
     // Start background tile loader
     loader_->start();

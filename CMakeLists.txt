@@ -49,9 +49,10 @@ endif()
 # Protobuf
 find_package(Protobuf REQUIRED)
 
-# Abseil — protobuf 35 transitive dependency (module-mode FindProtobuf
-# doesn't propagate it). Needed by any target that uses protobuf headers.
-find_package(absl CONFIG REQUIRED)
+# Protobuf 35+ depends on Abseil, but the CMake module target does not
+# propagate those libraries. Use pkg-config to get the full link set.
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(PROTOBUF REQUIRED protobuf IMPORTED_TARGET)
 
 # zstd
 find_package(zstd REQUIRED)

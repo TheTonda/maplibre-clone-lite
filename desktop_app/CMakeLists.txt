@@ -16,7 +16,5 @@ target_link_libraries(desktop_app
         SDL2::SDL2
         OpenGL::GL
         glad_gl_core_33
-        absl::absl_check
-        absl::absl_log
         ${CMAKE_DL_LIBS}
 )

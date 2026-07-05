@@ -75,6 +75,7 @@ void Camera::set_position(float x, float z) {
 void Camera::pan(float dx, float dz) {
     x_ += dx;
     z_ += dz;
+    clamp_position();
     matrices_valid_ = false;
     dirty_ = true;
 }
@@ -198,6 +199,7 @@ void Camera::set_dataset_bounds(float min_x, float max_x,
     max_x_ = max_x;
     min_z_ = min_z;
     max_z_ = max_z;
+    bounds_set_ = true;
 }
 
 void Camera::frame_dataset() {
@@ -214,6 +216,7 @@ void Camera::frame_dataset() {
 
 // ── LLD §5.4: Matrix computation ─────────────────────────────────────
 void Camera::recompute_matrices(float aspect) const {
+    last_aspect_ = aspect;
     float half_span = visible_span_ / 2.0f;
     float half_w, half_h;
 
@@ -237,7 +240,7 @@ void Camera::recompute_matrices(float aspect) const {
 }
 
 glm::mat4 Camera::get_projection_matrix(float aspect) const {
-    if (!matrices_valid_) {
+    if (!matrices_valid_ || aspect != last_aspect_) {
         recompute_matrices(aspect);
     }
     return proj_;
@@ -245,7 +248,7 @@ glm::mat4 Camera::get_projection_matrix(float aspect) const {
 
 glm::mat4 Camera::get_view_matrix() const {
     if (!matrices_valid_) {
-        recompute_matrices(1.0f);
+        recompute_matrices(last_aspect_);
     }
     return view_;
 }
@@ -259,6 +262,7 @@ float Camera::get_z() const { return z_; }
 float Camera::get_visible_span() const { return visible_span_; }
 
 void Camera::clamp_position() {
+    if (!bounds_set_) return;
     x_ = clamp_val(x_, min_x_, max_x_);
     z_ = clamp_val(z_, min_z_, max_z_);
 }

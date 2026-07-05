@@ -22,7 +22,7 @@ target_include_directories(engine
 target_link_libraries(engine
     PUBLIC
         glm::glm
-        protobuf::libprotobuf
+        PkgConfig::PROTOBUF
         zstd::libzstd
     PRIVATE
         glad_gl_core_33

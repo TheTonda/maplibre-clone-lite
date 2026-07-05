@@ -223,7 +223,8 @@ BuiltGeometry GeometryBuilder::build_tile(const TileData& tile) {
     // Roads
     before = vertex_count();
     for (const auto& road : tile.roads) {
-        const std::vector<float> quads = build_road_quads(road.line, road.width);
+        const std::vector<float> quads =
+            build_road_quads(road.line, road.width);
         geom.vertices.insert(geom.vertices.end(), quads.begin(), quads.end());
     }
     geom.road.offset = static_cast<uint32_t>(before);

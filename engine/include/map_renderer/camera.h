@@ -67,6 +67,7 @@ private:
     float max_x_ = 0.0f;
     float min_z_ = 0.0f;
     float max_z_ = 0.0f;
+    bool bounds_set_ = false;
 
     double ref_lat_ = 0.0;  // ENU reference point (from metadata)
     double ref_lon_ = 0.0;
@@ -77,6 +78,7 @@ private:
     mutable glm::mat4 proj_ = glm::mat4(1.0f);
     mutable glm::mat4 view_ = glm::mat4(1.0f);
     mutable bool matrices_valid_ = false;
+    mutable float last_aspect_ = 1.0f;
 
     void recompute_matrices(float aspect) const;
     void clamp_position();
