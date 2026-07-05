@@ -7,6 +7,9 @@ set(MAPRENDER_SOURCES
     src/c_api.cpp
     src/mbtiles_reader.cpp
     src/webp_decoder.cpp
+    src/viewport.cpp
+    src/tile_cache.cpp
+    src/renderer.cpp
 )
 
 add_library(maprender STATIC ${MAPRENDER_SOURCES})
@@ -36,6 +39,8 @@ if(MR_BUILD_TESTS)
         INTERFACE_INCLUDE_DIRECTORIES ${STB_INCLUDE_DIR})
     add_library(StbImageWrite::StbImageWrite ALIAS StbImageWrite)
 
+    find_package(GTest REQUIRED)
+
     add_executable(make_fixture tests/make_fixture.cpp)
     target_link_libraries(make_fixture PRIVATE
         maprender StbImageWrite::StbImageWrite SQLite::SQLite3)
@@ -44,12 +49,20 @@ if(MR_BUILD_TESTS)
 
     add_executable(tile_dump tests/tile_dump.cpp)
     target_link_libraries(tile_dump PRIVATE
-        maprender StbImageWrite::StbImageWrite SQLite::SQLite3)
-    target_link_directories(tile_dump PRIVATE ${WebP_LIBRARY_DIRS})
-    target_include_directories(tile_dump PRIVATE ${WebP_INCLUDE_DIRS})
-    target_link_libraries(tile_dump PRIVATE ${WebP_LIBRARIES})
+        maprender StbImageWrite::StbImageWrite SQLite::SQLite3 PkgConfig::WebP)
+
+    add_executable(snapshot tests/snapshot.cpp)
+    target_link_libraries(snapshot PRIVATE
+        maprender StbImageWrite::StbImageWrite)
+
+    add_executable(engine_tests
+        tests/test_viewport.cpp
+        tests/test_cache.cpp
+        tests/test_render.cpp)
+    target_link_libraries(engine_tests PRIVATE
+        maprender GTest::gtest GTest::gtest_main)
 
     enable_testing()
-    add_test(NAME phase1_smoke_dummy
-             COMMAND ${CMAKE_COMMAND} -E echo "phase1 build-only smoke")
+    add_test(NAME engine_unit COMMAND engine_tests
+             WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 endif()

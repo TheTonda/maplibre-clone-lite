@@ -32,6 +32,9 @@ android/app/build/
 android/local.properties
 android/*.iml
 
+# Generated snapshots
+engine/tests/snapshots/*.png
+
 # OS files
 .DS_Store
 Thumbs.db

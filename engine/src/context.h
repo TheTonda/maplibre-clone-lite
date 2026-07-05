@@ -16,15 +16,18 @@ struct Frame {
 
 struct Context {
     std::unique_ptr<MBTilesReader> reader;
+    std::unique_ptr<class Renderer> renderer;
     std::string last_error;
 
-    // Viewport (Phase 2 will fill these in)
     double center_lon = 0.0;
     double center_lat = 0.0;
     int    zoom = 0;
     int    screen_w = 0;
     int    screen_h = 0;
+    int    min_zoom = 0;
+    int    max_zoom = 0;
     Frame  frame;
+    long   view_gen = 0;  // bumped whenever view fields change
 };
 
 }  // namespace maprender
