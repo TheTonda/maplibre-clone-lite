@@ -2,19 +2,27 @@
 #include "mbtiles_writer.h"
 #include "osm_reader.h"
 #include "style.h"
-#include "tile_baker.h"
 #include "tile_rasterizer.h"
 #include "webp_encoder.h"
 
 #include <maprender/mercator.h>
 
+#include <osmium/area/assembler.hpp>
+#include <osmium/area/multipolygon_manager.hpp>
 #include <osmium/io/any_input.hpp>
+#include <osmium/relations/manager_util.hpp>
 #include <osmium/visitor.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
+#include <limits>
 #include <string>
+#include <thread>
+#include <unordered_map>
+#include <vector>
 
 namespace {
 
@@ -24,17 +32,22 @@ struct Options {
     int min_z = 8;
     int max_z = 14;
     float quality = 0.85f;
+    int lossless_zoom = 17;  // zoom levels >= this use lossless WebP
+    int threads = static_cast<int>(std::thread::hardware_concurrency());
 };
 
 Options parse_args(int argc, char** argv) {
     Options opt;
+    if (opt.threads < 1) opt.threads = 1;
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
         if (a == "-i" && i + 1 < argc) opt.in = argv[++i];
         else if (a == "-o" && i + 1 < argc) opt.out = argv[++i];
         else if (a == "-z" && i + 1 < argc) opt.min_z = std::atoi(argv[++i]);
         else if (a == "-Z" && i + 1 < argc) opt.max_z = std::atoi(argv[++i]);
-        else if (a == "-q" && i + 1 < argc) opt.quality = std::atof(argv[++i]);
+        else if (a == "-q" && i + 1 < argc) opt.quality = static_cast<float>(std::atof(argv[++i]));
+        else if ((a == "--lossless-zoom" || a == "-l") && i + 1 < argc) opt.lossless_zoom = std::atoi(argv[++i]);
+        else if ((a == "--threads" || a == "-t") && i + 1 < argc) opt.threads = std::atoi(argv[++i]);
     }
     if (opt.out.empty()) opt.out = "out.webp.mbtiles";
     return opt;
@@ -42,8 +55,173 @@ Options parse_args(int argc, char** argv) {
 
 void print_usage(const char* prog) {
     std::fprintf(stderr,
-        "usage: %s -i region.osm.pbf [-o out.webp.mbtiles] [-z min_z] [-Z max_z] [-q quality]\n",
+        "usage: %s -i region.osm.pbf [-o out.webp.mbtiles] [-z min_z] [-Z max_z] [-q quality]\n"
+        "       [--lossless-zoom N] [--threads N]\n",
         prog);
+}
+
+struct ProjectedFeature {
+    int layer = 0;
+    uint32_t color = 0;
+    float line_width = 0.0f;
+    bool is_area = false;
+    std::vector<double> wx;  // world pixels at z_max
+    std::vector<double> wy;
+    int tx_min = 0;
+    int tx_max = 0;
+    int ty_min = 0;
+    int ty_max = 0;
+};
+
+struct TileKey {
+    int z = 0;
+    int x = 0;
+    int y = 0;
+    bool operator==(const TileKey& other) const noexcept {
+        return z == other.z && x == other.x && y == other.y;
+    }
+};
+
+struct TileKeyHash {
+    std::size_t operator()(const TileKey& k) const noexcept {
+        // Simple 3D integer hash.
+        std::size_t h = static_cast<std::size_t>(k.z) * 73856093u;
+        h ^= static_cast<std::size_t>(k.x) * 19349663u;
+        h ^= static_cast<std::size_t>(k.y) * 83492791u;
+        return h;
+    }
+};
+
+struct TileWork {
+    TileKey key;
+    std::vector<const ProjectedFeature*> features;
+};
+
+std::vector<ProjectedFeature> project_features(
+    const std::vector<mapbake::Feature>& features, int z_max) {
+    std::vector<ProjectedFeature> out;
+    out.reserve(features.size());
+    for (const auto& f : features) {
+        if (f.geometry.empty()) continue;
+        ProjectedFeature pf;
+        pf.layer = f.layer;
+        pf.color = f.color;
+        pf.line_width = f.line_width;
+        pf.is_area = f.is_area;
+        pf.wx.reserve(f.geometry.size());
+        pf.wy.reserve(f.geometry.size());
+        int tx_min = std::numeric_limits<int>::max();
+        int tx_max = std::numeric_limits<int>::min();
+        int ty_min = std::numeric_limits<int>::max();
+        int ty_max = std::numeric_limits<int>::min();
+        for (const auto& p : f.geometry) {
+            const double wx = maprender::lon_to_world_x(p.x, z_max);
+            const double wy = maprender::lat_to_world_y(p.y, z_max);
+            pf.wx.push_back(wx);
+            pf.wy.push_back(wy);
+            const int tx = static_cast<int>(std::floor(wx / maprender::kTileSize));
+            const int ty = static_cast<int>(std::floor(wy / maprender::kTileSize));
+            tx_min = std::min(tx_min, tx);
+            tx_max = std::max(tx_max, tx);
+            ty_min = std::min(ty_min, ty);
+            ty_max = std::max(ty_max, ty);
+        }
+        if (pf.wx.empty()) continue;
+        pf.tx_min = tx_min;
+        pf.tx_max = tx_max;
+        pf.ty_min = ty_min;
+        pf.ty_max = ty_max;
+        out.push_back(std::move(pf));
+    }
+    return out;
+}
+
+std::vector<TileWork> bucket_tiles(
+    const std::vector<ProjectedFeature>& features, int z, int z_max) {
+    const int diff = z_max - z;
+    const int max_xy = 1 << z;
+    std::unordered_map<TileKey, std::vector<const ProjectedFeature*>, TileKeyHash> buckets;
+    buckets.reserve(features.size() * 4);
+
+    for (const auto& pf : features) {
+        int x0 = (pf.tx_min >> diff) - 1;
+        int x1 = (pf.tx_max >> diff) + 1;
+        int y0 = (pf.ty_min >> diff) - 1;
+        int y1 = (pf.ty_max >> diff) + 1;
+        x0 = std::max(0, x0);
+        x1 = std::min(max_xy - 1, x1);
+        y0 = std::max(0, y0);
+        y1 = std::min(max_xy - 1, y1);
+        if (x0 > x1 || y0 > y1) continue;
+
+        for (int ty = y0; ty <= y1; ++ty) {
+            for (int tx = x0; tx <= x1; ++tx) {
+                buckets[{z, tx, ty}].push_back(&pf);
+            }
+        }
+    }
+
+    std::vector<TileWork> work;
+    work.reserve(buckets.size());
+    for (auto& kv : buckets) {
+        work.push_back({kv.first, std::move(kv.second)});
+    }
+    return work;
+}
+
+void render_tiles(size_t start, size_t end,
+                  const std::vector<TileWork>& work,
+                  int z, int z_max,
+                  float line_scale,
+                  bool lossless, float webp_quality,
+                  std::vector<std::vector<uint8_t>>& out) {
+    mapbake::TileRasterizer rasterizer;
+    constexpr double kClipMargin = 2.0;
+    const double scale = 1.0 / static_cast<double>(1u << (z_max - z));
+    const double tile_size = maprender::kTileSize;
+
+    for (size_t idx = start; idx < end; ++idx) {
+        const auto& tw = work[idx];
+        rasterizer.clear();
+
+        // Stable painter order: lower layers first.
+        std::vector<const ProjectedFeature*> ordered = tw.features;
+        std::sort(ordered.begin(), ordered.end(),
+            [](const ProjectedFeature* a, const ProjectedFeature* b) {
+                return a->layer < b->layer;
+            });
+
+        const double ox = static_cast<double>(tw.key.x) * tile_size;
+        const double oy = static_cast<double>(tw.key.y) * tile_size;
+
+        for (const ProjectedFeature* pf : ordered) {
+            mapbake::Ring local;
+            local.reserve(pf->wx.size());
+            for (size_t i = 0; i < pf->wx.size(); ++i) {
+                local.push_back({pf->wx[i] * scale - ox,
+                                 pf->wy[i] * scale - oy});
+            }
+            if (pf->is_area) {
+                if (local.front().x != local.back().x ||
+                    local.front().y != local.back().y) {
+                    local.push_back(local.front());
+                }
+                auto clipped = mapbake::clip_to_rect(
+                    local, maprender::kTileSize, kClipMargin, true);
+                if (clipped.size() >= 3) rasterizer.draw_area(clipped, pf->color);
+            } else {
+                auto clipped = mapbake::clip_to_rect(
+                    local, maprender::kTileSize, kClipMargin, false);
+                if (clipped.size() >= 2) {
+                    rasterizer.draw_line(clipped, pf->line_width * line_scale, pf->color);
+                }
+            }
+        }
+
+        out[idx] = lossless
+            ? mapbake::encode_webp_lossless(rasterizer.rgba8())
+            : mapbake::encode_webp(rasterizer.rgba8(), webp_quality);
+    }
 }
 
 }  // namespace
@@ -52,13 +230,50 @@ int main(int argc, char** argv) {
     if (argc < 2) { print_usage(argv[0]); return 2; }
     const Options opt = parse_args(argc, argv);
     if (opt.in.empty()) { std::fprintf(stderr, "missing -i\n"); print_usage(argv[0]); return 2; }
+    if (opt.min_z > opt.max_z) { std::fprintf(stderr, "min zoom > max zoom\n"); return 2; }
 
     try {
-        osmium::io::Reader reader(opt.in, osmium::osm_entity_bits::node | osmium::osm_entity_bits::way);
+        osmium::area::Assembler::config_type assembler_config;
+        osmium::area::MultipolygonManager<osmium::area::Assembler> mp_manager{assembler_config};
+
+        std::fprintf(stderr, "pass 1: reading relations...\n");
+        osmium::io::File input_file(opt.in);
+        osmium::relations::read_relations(input_file, mp_manager);
+
+        std::fprintf(stderr, "pass 2: reading nodes, ways and assembling areas...\n");
+        osmium::io::Reader reader(opt.in,
+            osmium::osm_entity_bits::node | osmium::osm_entity_bits::way);
         mapbake::NodeIndex index;
         mapbake::NodeLocations locs(index);
         mapbake::OsmCollector collector;
-        osmium::apply(reader, locs, collector);
+
+        auto area_handler = mp_manager.handler([&](const osmium::memory::Buffer& buffer) {
+            for (const auto& area : buffer.select<osmium::Area>()) {
+                std::vector<std::pair<std::string, std::string>> tags;
+                for (const auto& tag : area.tags()) {
+                    tags.emplace_back(tag.key(), tag.value());
+                }
+                const mapbake::StyleRule* rule = mapbake::match_style(tags, true);
+                if (!rule) continue;
+
+                mapbake::Feature f;
+                f.layer = rule->layer;
+                f.color = rule->rgba;
+                f.is_area = true;
+                f.line_width = 0.0f;
+
+                const auto& outer = *area.outer_rings().begin();
+                f.geometry.reserve(outer.size());
+                for (const auto& node : outer) {
+                    f.geometry.push_back(mapbake::Point{node.lon(), node.lat()});
+                }
+                if (f.geometry.size() >= 3) {
+                    collector.features.push_back(std::move(f));
+                }
+            }
+        });
+
+        osmium::apply(reader, locs, area_handler, collector);
         reader.close();
 
         std::fprintf(stderr, "collected %zu features\n", collector.features.size());
@@ -88,56 +303,47 @@ int main(int argc, char** argv) {
             return 1;
         }
 
-        mapbake::TileRasterizer rasterizer;
+        std::fprintf(stderr, "projecting features once at z=%d...\n", opt.max_z);
+        const auto sources = project_features(collector.features, opt.max_z);
+        std::fprintf(stderr, "projected %zu features\n", sources.size());
+
         for (int z = opt.min_z; z <= opt.max_z; ++z) {
-            auto buckets = mapbake::bucket_features(collector.features, z);
-            std::fprintf(stderr, "z=%d  tiles=%zu\n", z, buckets.size());
+            auto work = bucket_tiles(sources, z, opt.max_z);
+            std::fprintf(stderr, "z=%d  tiles=%zu\n", z, work.size());
             const int max_xy = 1 << z;
-            for (auto& kv : buckets) {
-                const auto& key = kv.first;
-                const auto& feats = kv.second;
-                rasterizer.clear();
-                // Sort by layer so areas draw before roads.
-                std::vector<const mapbake::Feature*> ordered;
-                for (const auto& f : feats) ordered.push_back(&f);
-                std::sort(ordered.begin(), ordered.end(),
-                    [](const mapbake::Feature* a, const mapbake::Feature* b) {
-                        return a->layer < b->layer;
-                    });
+            const float line_scale = std::pow(2.0f, static_cast<float>(z - 14) * 0.5f);
+            const bool lossless = (z >= opt.lossless_zoom);
+            const float webp_quality = lossless ? 100.0f : opt.quality * 100.0f;
 
-                for (const mapbake::Feature* f : ordered) {
-                    mapbake::Ring projected;
-                    projected.reserve(f->geometry.size());
-                    for (const auto& p : f->geometry) {
-                        const double wx = maprender::lon_to_world_x(p.x, z);
-                        const double wy = maprender::lat_to_world_y(p.y, z);
-                        projected.push_back({wx - key.x * maprender::kTileSize,
-                                             wy - key.y * maprender::kTileSize});
-                    }
-                    if (f->is_area) {
-                        if (projected.front().x != projected.back().x ||
-                            projected.front().y != projected.back().y) {
-                            projected.push_back(projected.front());
-                        }
-                        mapbake::Ring clipped = mapbake::clip_to_rect(projected, maprender::kTileSize, true);
-                        if (clipped.size() >= 3) rasterizer.draw_area(clipped, f->color);
-                    } else {
-                        mapbake::Ring clipped = mapbake::clip_to_rect(projected, maprender::kTileSize, false);
-                        if (clipped.size() >= 2) {
-                            // Scale line width from z14 reference.
-                            const float scale = std::pow(2.0f, static_cast<float>(z - 14));
-                            rasterizer.draw_line(clipped, f->line_width * scale, f->color);
-                        }
-                    }
-                }
+            std::vector<std::vector<uint8_t>> encoded(work.size());
 
-                const int tms_row = max_xy - 1 - key.y;
-                auto blob = mapbake::encode_webp(rasterizer.rgba8(), opt.quality * 100.0f);
-                if (!blob.empty()) {
-                    writer.write_tile(z, key.x, tms_row, blob);
-                }
+            const size_t nthreads = static_cast<size_t>(opt.threads);
+            std::vector<std::thread> threads;
+            threads.reserve(nthreads);
+            const size_t chunk = (work.size() + nthreads - 1) / nthreads;
+            for (size_t t = 0; t < nthreads; ++t) {
+                const size_t start = std::min(t * chunk, work.size());
+                const size_t end = std::min((t + 1) * chunk, work.size());
+                if (start >= end) continue;
+                threads.emplace_back(render_tiles,
+                                     start, end,
+                                     std::cref(work),
+                                     z, opt.max_z,
+                                     line_scale,
+                                     lossless, webp_quality,
+                                     std::ref(encoded));
             }
+            for (auto& th : threads) th.join();
+
+            writer.begin_batch();
+            for (size_t i = 0; i < work.size(); ++i) {
+                if (encoded[i].empty()) continue;
+                const int tms_row = max_xy - 1 - work[i].key.y;
+                writer.write_tile(z, work[i].key.x, tms_row, encoded[i]);
+            }
+            writer.end_batch();
         }
+
         writer.close();
         std::fprintf(stderr, "wrote %s\n", opt.out.c_str());
         return 0;

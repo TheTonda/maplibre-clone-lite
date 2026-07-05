@@ -21,4 +21,8 @@ struct Feature {
 // For lines returns clipped line segments concatenated (gaps possible but ok for MVP).
 Ring clip_to_rect(const Ring& ring, double size, bool close_result);
 
+// Clip to [0..size] expanded by margin on every side, i.e. [-margin..size+margin].
+// Useful to draw anti-aliased or exactly-boundary features consistently across tile edges.
+Ring clip_to_rect(const Ring& ring, double size, double margin, bool close_result);
+
 }  // namespace mapbake

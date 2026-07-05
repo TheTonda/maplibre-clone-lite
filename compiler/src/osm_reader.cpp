@@ -23,11 +23,12 @@ void OsmCollector::way(const osmium::Way& way) {
     const bool closed = way.is_closed() || implies_area;
     const StyleRule* rule = match_style(tags, closed);
     if (!rule) return;
+    if (rule->area) return;  // Areas come from the multipolygon assembler.
 
     Feature f;
     f.layer = rule->layer;
     f.color = rule->rgba;
-    f.is_area = rule->area;
+    f.is_area = false;
     f.line_width = rule->line_width_z14;
 
     for (const auto& nr : way.nodes()) {
@@ -36,13 +37,6 @@ void OsmCollector::way(const osmium::Way& way) {
         f.geometry.push_back({loc.lon_without_check(), loc.lat_without_check()});
     }
     if (f.geometry.size() < 2) return;
-    if (f.is_area && !closed) {
-        // Close it ourselves if the source data didn't duplicate the first node.
-        if (f.geometry.front().x != f.geometry.back().x ||
-            f.geometry.front().y != f.geometry.back().y) {
-            f.geometry.push_back(f.geometry.front());
-        }
-    }
     features.push_back(std::move(f));
 }
 

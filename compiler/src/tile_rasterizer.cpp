@@ -31,16 +31,15 @@ void TileRasterizer::set_pixel(int x, int y, uint32_t color) {
 // self-intersecting rings (acceptable for OSM in MVP).
 void TileRasterizer::scanline_fill(const Ring& ring, uint32_t color) {
     if (ring.size() < 3) return;
-    int y_min = kSize, y_max = 0;
+    double y_min = kSize, y_max = 0;
     for (const auto& p : ring) {
-        int y = static_cast<int>(std::floor(p.y));
-        y_min = std::min(y_min, y);
-        y_max = std::max(y_max, y);
+        y_min = std::min(y_min, p.y);
+        y_max = std::max(y_max, p.y);
     }
-    y_min = std::max(0, y_min);
-    y_max = std::min(kSize - 1, y_max);
+    int y0 = std::max(0, static_cast<int>(std::floor(y_min)));
+    int y1 = std::min(kSize - 1, static_cast<int>(std::ceil(y_max)));
 
-    for (int y = y_min; y <= y_max; ++y) {
+    for (int y = y0; y <= y1; ++y) {
         const double yy = y + 0.5;
         std::vector<double> xs;
         const size_t n = ring.size();
@@ -54,8 +53,9 @@ void TileRasterizer::scanline_fill(const Ring& ring, uint32_t color) {
         }
         std::sort(xs.begin(), xs.end());
         for (size_t i = 0; i + 1 < xs.size(); i += 2) {
-            int x0 = static_cast<int>(std::ceil(xs[i]));
-            int x1 = static_cast<int>(std::floor(xs[i+1]));
+            // Conservative rasterization: any pixel touched by the polygon is filled.
+            int x0 = static_cast<int>(std::floor(xs[i]));
+            int x1 = static_cast<int>(std::ceil(xs[i+1]));
             x0 = std::max(0, x0);
             x1 = std::min(kSize - 1, x1);
             for (int x = x0; x <= x1; ++x) set_pixel(x, y, color);

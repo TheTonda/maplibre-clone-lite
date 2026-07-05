@@ -68,4 +68,14 @@ Ring clip_to_rect(const Ring& ring, double size, bool close_result) {
     return out;
 }
 
+Ring clip_to_rect(const Ring& ring, double size, double margin, bool close_result) {
+    if (margin <= 0.0) return clip_to_rect(ring, size, close_result);
+    Ring shifted;
+    shifted.reserve(ring.size());
+    for (const auto& p : ring) shifted.push_back({p.x + margin, p.y + margin});
+    Ring clipped = clip_to_rect(shifted, size + 2.0 * margin, close_result);
+    for (auto& p : clipped) { p.x -= margin; p.y -= margin; }
+    return clipped;
+}
+
 }  // namespace mapbake

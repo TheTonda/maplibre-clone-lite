@@ -17,6 +17,14 @@ bool MBTilesWriter::open(int min_z, int max_z,
         return false;
     }
     char* err = nullptr;
+    sqlite3_exec(db_,
+        "PRAGMA synchronous=OFF;"
+        "PRAGMA journal_mode=OFF;"
+        "PRAGMA locking_mode=EXCLUSIVE;"
+        "PRAGMA cache_size=-1048576;",
+        nullptr, nullptr, &err);
+    if (err) { sqlite3_free(err); err = nullptr; }
+
     if (sqlite3_exec(db_,
         "CREATE TABLE metadata (name TEXT, value TEXT);"
         "CREATE TABLE tiles ("
@@ -58,6 +66,22 @@ bool MBTilesWriter::write_tile(int z, int tms_x, int tms_y, const std::vector<ui
     sqlite3_bind_blob(insert_, 4, blob.data(), static_cast<int>(blob.size()), SQLITE_TRANSIENT);
     bool ok = sqlite3_step(insert_) == SQLITE_DONE;
     sqlite3_reset(insert_);
+    return ok;
+}
+
+bool MBTilesWriter::begin_batch() {
+    if (!db_) return false;
+    char* err = nullptr;
+    bool ok = sqlite3_exec(db_, "BEGIN;", nullptr, nullptr, &err) == SQLITE_OK;
+    if (err) sqlite3_free(err);
+    return ok;
+}
+
+bool MBTilesWriter::end_batch() {
+    if (!db_) return false;
+    char* err = nullptr;
+    bool ok = sqlite3_exec(db_, "COMMIT;", nullptr, nullptr, &err) == SQLITE_OK;
+    if (err) sqlite3_free(err);
     return ok;
 }
 
