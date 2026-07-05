@@ -22,7 +22,7 @@ target_include_directories(maprender
 )
 target_link_libraries(maprender
     PUBLIC
-        SQLite::SQLite3
+        SQLite3::SQLite3
     PRIVATE
         PkgConfig::WebP
         ZLIB::ZLIB
@@ -43,13 +43,13 @@ if(MR_BUILD_TESTS)
 
     add_executable(make_fixture tests/make_fixture.cpp)
     target_link_libraries(make_fixture PRIVATE
-        maprender StbImageWrite::StbImageWrite SQLite::SQLite3)
+        maprender StbImageWrite::StbImageWrite SQLite3::SQLite3)
     target_compile_definitions(make_fixture PRIVATE
         MR_FIXTURE_OUT="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
 
     add_executable(tile_dump tests/tile_dump.cpp)
     target_link_libraries(tile_dump PRIVATE
-        maprender StbImageWrite::StbImageWrite SQLite::SQLite3 PkgConfig::WebP)
+        maprender StbImageWrite::StbImageWrite SQLite3::SQLite3 PkgConfig::WebP)
 
     add_executable(snapshot tests/snapshot.cpp)
     target_link_libraries(snapshot PRIVATE

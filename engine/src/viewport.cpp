@@ -35,14 +35,11 @@ bool Viewport::zoom_by(int delta, double anchor_lon, double anchor_lat) {
     const int new_zoom = std::clamp(zoom + delta, 0, 20);
     if (new_zoom == zoom) return false;
 
-    // Pixel offset of anchor from screen center at the old zoom.
     const double ax_old = lon_to_world_x(anchor_lon, zoom);
     const double ay_old = lat_to_world_y(anchor_lat, zoom);
     const double off_x = ax_old - center_x;
     const double off_y = ay_old - center_y;
 
-    // At the new zoom the anchor maps to a different world-px position; keep
-    // its screen offset unchanged by recomputing center.
     zoom = new_zoom;
     const double ax_new = lon_to_world_x(anchor_lon, zoom);
     const double ay_new = lat_to_world_y(anchor_lat, zoom);

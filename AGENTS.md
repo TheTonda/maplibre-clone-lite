@@ -126,6 +126,7 @@ complete in `docs/PLAN.md` until the relevant gates pass.
 ## Where things live (common lookup)
 
 - Public ABI: `engine/include/maprender/c_api.h`
+- Shared Mercator math: `engine/include/maprender/mercator.h`
 - ABI impl wrap: `engine/src/c_api.cpp`
 - MBTiles read: `engine/src/mbtiles_reader.cpp`
 - WebP decode: `engine/src/webp_decoder.cpp`
