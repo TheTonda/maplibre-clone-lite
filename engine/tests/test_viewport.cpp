@@ -24,9 +24,14 @@ TEST(Viewport, RoundTripLonLat) {
 }
 
 TEST(Viewport, WorldWidthDoubles) {
-    for (int z = 0; z <= 14; ++z) {
+    for (int z = 0; z <= 20; ++z) {
         EXPECT_DOUBLE_EQ(world_width_at(z), 256.0 * (1ull << z));
     }
+}
+
+TEST(Viewport, WorldWidthAtHighZoom) {
+    EXPECT_DOUBLE_EQ(world_width_at(18), 256.0 * (1ull << 18));
+    EXPECT_DOUBLE_EQ(world_width_at(20), 256.0 * (1ull << 20));
 }
 
 TEST(Viewport, TileRangeBasic) {
@@ -39,6 +44,25 @@ TEST(Viewport, TileRangeBasic) {
     EXPECT_EQ(vp.tile_x_max(), 128);
     EXPECT_EQ(vp.tile_y_min(), 127);
     EXPECT_EQ(vp.tile_y_max(), 128);
+}
+
+TEST(Viewport, TmsSlippyFlipRoundTrip) {
+    for (int z : {0, 8, 17, 18, 20}) {
+        const int max_row = static_cast<int>((1u << z) - 1);
+        for (int slippy_y : {0, max_row / 2, max_row}) {
+            const int tms_y = max_row - slippy_y;
+            EXPECT_EQ(max_row - tms_y, slippy_y) << "z=" << z << " y=" << slippy_y;
+        }
+    }
+}
+
+TEST(Viewport, TileRangeAtZ18) {
+    Viewport vp;
+    vp.set_view(77.23, 28.63, 18, 1024, 768);
+    EXPECT_EQ(vp.tile_x_min(), 187307);
+    EXPECT_EQ(vp.tile_x_max(), 187311);
+    EXPECT_EQ(vp.tile_y_min(), 109296);
+    EXPECT_EQ(vp.tile_y_max(), 109299);
 }
 
 TEST(Viewport, PanShiftsCenter) {

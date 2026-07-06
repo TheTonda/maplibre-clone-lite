@@ -60,13 +60,19 @@ void print_usage(const char* prog) {
         prog);
 }
 
+struct ProjectedRing {
+    std::vector<double> wx;
+    std::vector<double> wy;
+};
+
 struct ProjectedFeature {
     int layer = 0;
     uint32_t color = 0;
     float line_width = 0.0f;
     bool is_area = false;
-    std::vector<double> wx;  // world pixels at z_max
+    std::vector<double> wx;  // world pixels at z_max (outer ring)
     std::vector<double> wy;
+    std::vector<ProjectedRing> inner_rings;
     int tx_min = 0;
     int tx_max = 0;
     int ty_min = 0;
@@ -114,18 +120,30 @@ std::vector<ProjectedFeature> project_features(
         int tx_max = std::numeric_limits<int>::min();
         int ty_min = std::numeric_limits<int>::max();
         int ty_max = std::numeric_limits<int>::min();
-        for (const auto& p : f.geometry) {
-            const double wx = maprender::lon_to_world_x(p.x, z_max);
-            const double wy = maprender::lat_to_world_y(p.y, z_max);
-            pf.wx.push_back(wx);
-            pf.wy.push_back(wy);
-            const int tx = static_cast<int>(std::floor(wx / maprender::kTileSize));
-            const int ty = static_cast<int>(std::floor(wy / maprender::kTileSize));
-            tx_min = std::min(tx_min, tx);
-            tx_max = std::max(tx_max, tx);
-            ty_min = std::min(ty_min, ty);
-            ty_max = std::max(ty_max, ty);
+        auto project_ring = [&](const mapbake::Ring& ring,
+                                std::vector<double>& out_wx,
+                                std::vector<double>& out_wy) {
+            for (const auto& p : ring) {
+                const double wx = maprender::lon_to_world_x(p.x, z_max);
+                const double wy = maprender::lat_to_world_y(p.y, z_max);
+                out_wx.push_back(wx);
+                out_wy.push_back(wy);
+                const int tx = static_cast<int>(std::floor(wx / maprender::kTileSize));
+                const int ty = static_cast<int>(std::floor(wy / maprender::kTileSize));
+                tx_min = std::min(tx_min, tx);
+                tx_max = std::max(tx_max, tx);
+                ty_min = std::min(ty_min, ty);
+                ty_max = std::max(ty_max, ty);
+            }
+        };
+
+        project_ring(f.geometry, pf.wx, pf.wy);
+        for (const auto& hole : f.inner_rings) {
+            ProjectedRing pr;
+            project_ring(hole, pr.wx, pr.wy);
+            if (!pr.wx.empty()) pf.inner_rings.push_back(std::move(pr));
         }
+
         if (pf.wx.empty()) continue;
         pf.tx_min = tx_min;
         pf.tx_max = tx_max;
@@ -139,7 +157,7 @@ std::vector<ProjectedFeature> project_features(
 std::vector<TileWork> bucket_tiles(
     const std::vector<ProjectedFeature>& features, int z, int z_max) {
     const int diff = z_max - z;
-    const int max_xy = 1 << z;
+    const int max_xy = static_cast<int>(1u << z);
     std::unordered_map<TileKey, std::vector<const ProjectedFeature*>, TileKeyHash> buckets;
     buckets.reserve(features.size() * 4);
 
@@ -195,25 +213,47 @@ void render_tiles(size_t start, size_t end,
         const double oy = static_cast<double>(tw.key.y) * tile_size;
 
         for (const ProjectedFeature* pf : ordered) {
-            mapbake::Ring local;
-            local.reserve(pf->wx.size());
-            for (size_t i = 0; i < pf->wx.size(); ++i) {
-                local.push_back({pf->wx[i] * scale - ox,
-                                 pf->wy[i] * scale - oy});
-            }
-            if (pf->is_area) {
-                if (local.front().x != local.back().x ||
-                    local.front().y != local.back().y) {
-                    local.push_back(local.front());
+            auto make_local = [&](const std::vector<double>& wx,
+                                  const std::vector<double>& wy) {
+                mapbake::Ring local;
+                local.reserve(wx.size());
+                for (size_t i = 0; i < wx.size(); ++i) {
+                    local.push_back({wx[i] * scale - ox,
+                                     wy[i] * scale - oy});
                 }
-                auto clipped = mapbake::clip_to_rect(
-                    local, maprender::kTileSize, kClipMargin, true);
-                if (clipped.size() >= 3) rasterizer.draw_area(clipped, pf->color);
+                return local;
+            };
+
+            if (pf->is_area) {
+                mapbake::Ring outer = make_local(pf->wx, pf->wy);
+                if (outer.front().x != outer.back().x ||
+                    outer.front().y != outer.back().y) {
+                    outer.push_back(outer.front());
+                }
+                auto clipped_outer = mapbake::clip_to_rect(
+                    outer, maprender::kTileSize, kClipMargin, true);
+
+                std::vector<mapbake::Ring> clipped_holes;
+                for (const auto& hole : pf->inner_rings) {
+                    mapbake::Ring local_hole = make_local(hole.wx, hole.wy);
+                    if (local_hole.front().x != local_hole.back().x ||
+                        local_hole.front().y != local_hole.back().y) {
+                        local_hole.push_back(local_hole.front());
+                    }
+                    auto clipped_hole = mapbake::clip_to_rect(
+                        local_hole, maprender::kTileSize, kClipMargin, true);
+                    if (clipped_hole.size() >= 3) {
+                        clipped_holes.push_back(std::move(clipped_hole));
+                    }
+                }
+
+                if (clipped_outer.size() >= 3) {
+                    rasterizer.draw_area(clipped_outer, clipped_holes, pf->color);
+                }
             } else {
-                auto clipped = mapbake::clip_to_rect(
-                    local, maprender::kTileSize, kClipMargin, false);
-                if (clipped.size() >= 2) {
-                    rasterizer.draw_line(clipped, pf->line_width * line_scale, pf->color);
+                mapbake::Ring local = make_local(pf->wx, pf->wy);
+                if (local.size() >= 2) {
+                    rasterizer.draw_line(local, pf->line_width * line_scale, pf->color);
                 }
             }
         }
@@ -256,19 +296,27 @@ int main(int argc, char** argv) {
                 const mapbake::StyleRule* rule = mapbake::match_style(tags, true);
                 if (!rule) continue;
 
-                mapbake::Feature f;
-                f.layer = rule->layer;
-                f.color = rule->rgba;
-                f.is_area = true;
-                f.line_width = 0.0f;
-
-                const auto& outer = *area.outer_rings().begin();
-                f.geometry.reserve(outer.size());
-                for (const auto& node : outer) {
-                    f.geometry.push_back(mapbake::Point{node.lon(), node.lat()});
-                }
-                if (f.geometry.size() >= 3) {
-                    collector.features.push_back(std::move(f));
+                for (const auto& outer : area.outer_rings()) {
+                    mapbake::Feature f;
+                    f.layer = rule->layer;
+                    f.color = rule->rgba;
+                    f.is_area = true;
+                    f.line_width = 0.0f;
+                    f.geometry.reserve(outer.size());
+                    for (const auto& node : outer) {
+                        f.geometry.push_back(mapbake::Point{node.lon(), node.lat()});
+                    }
+                    for (const auto& inner : area.inner_rings(outer)) {
+                        mapbake::Ring hole;
+                        hole.reserve(inner.size());
+                        for (const auto& node : inner) {
+                            hole.push_back(mapbake::Point{node.lon(), node.lat()});
+                        }
+                        if (hole.size() >= 3) f.inner_rings.push_back(std::move(hole));
+                    }
+                    if (f.geometry.size() >= 3) {
+                        collector.features.push_back(std::move(f));
+                    }
                 }
             }
         });
@@ -310,7 +358,7 @@ int main(int argc, char** argv) {
         for (int z = opt.min_z; z <= opt.max_z; ++z) {
             auto work = bucket_tiles(sources, z, opt.max_z);
             std::fprintf(stderr, "z=%d  tiles=%zu\n", z, work.size());
-            const int max_xy = 1 << z;
+            const int max_xy = static_cast<int>(1u << z);
             const float line_scale = std::pow(2.0f, static_cast<float>(z - 14) * 0.5f);
             const bool lossless = (z >= opt.lossless_zoom);
             const float webp_quality = lossless ? 100.0f : opt.quality * 100.0f;

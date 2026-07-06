@@ -43,8 +43,14 @@ if(MR_BUILD_TESTS)
 
     add_executable(make_fixture tests/make_fixture.cpp)
     target_link_libraries(make_fixture PRIVATE
-        maprender StbImageWrite::StbImageWrite SQLite3::SQLite3)
+        maprender StbImageWrite::StbImageWrite SQLite3::SQLite3 PkgConfig::WebP)
     target_compile_definitions(make_fixture PRIVATE
+        MR_FIXTURE_OUT="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
+
+    add_executable(make_highzoom_fixture tests/make_highzoom_fixture.cpp)
+    target_link_libraries(make_highzoom_fixture PRIVATE
+        maprender SQLite3::SQLite3 PkgConfig::WebP)
+    target_compile_definitions(make_highzoom_fixture PRIVATE
         MR_FIXTURE_OUT="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
 
     add_executable(tile_dump tests/tile_dump.cpp)

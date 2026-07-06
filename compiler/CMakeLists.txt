@@ -35,6 +35,9 @@ target_link_libraries(mapbake PRIVATE mapbake_core)
 # Osmium headers trigger false-positive stringop warnings with GCC 16+/Clang.
 target_compile_options(mapbake PRIVATE -Wno-stringop-overread -Wno-array-bounds)
 
+add_executable(crop_pbf tools/crop_pbf.cpp)
+target_link_libraries(crop_pbf PRIVATE mapbake_core)
+
 if(MR_BUILD_TESTS)
     add_executable(rasterizer_smoke tests/rasterizer_smoke.cpp)
     target_include_directories(rasterizer_smoke PRIVATE

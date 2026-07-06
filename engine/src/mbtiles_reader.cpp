@@ -63,7 +63,7 @@ void MBTilesReader::bounds(double& w, double& s, double& e, double& n) const {
 bool MBTilesReader::read_tile(int z, int x, int slippy_y, std::vector<unsigned char>& out) {
     if (!db_) return false;
 
-    const int tms_row = (1 << z) - 1 - slippy_y;  // MBTiles stores TMS rows
+    const int tms_row = static_cast<int>((1u << z) - 1) - slippy_y;  // MBTiles stores TMS rows
     sqlite3_stmt* stmt = nullptr;
     static const char* kSql =
         "SELECT tile_data FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=?;";

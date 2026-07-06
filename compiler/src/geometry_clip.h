@@ -13,7 +13,8 @@ struct Feature {
     uint32_t color = 0;
     float line_width = 0.0f;  // 0 for areas
     bool is_area = false;
-    Ring geometry;
+    Ring geometry;                   // outer ring for areas, line for lines
+    std::vector<Ring> inner_rings;   // holes for areas (empty for lines)
 };
 
 // Clip a ring/line to the axis-aligned rectangle [0..size] x [0..size].

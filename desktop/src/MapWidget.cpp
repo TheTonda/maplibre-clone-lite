@@ -125,8 +125,10 @@ void MapWidget::pan_by(int dx, int dy) {
     cy -= dy;
 
     const double W = maprender::world_width_at(zoom_);
-    cx = std::clamp(cx, 0.0, W);
-    cy = std::clamp(cy, 0.0, W);
+    const double half_w = w() / 2.0;
+    const double half_h = h() / 2.0;
+    cx = std::clamp(cx, half_w, std::max(half_w, W - half_w));
+    cy = std::clamp(cy, half_h, std::max(half_h, W - half_h));
 
     center_lon_ = maprender::world_x_to_lon(cx, zoom_);
     center_lat_ = maprender::world_y_to_lat(cy, zoom_);
@@ -147,8 +149,10 @@ void MapWidget::zoom_by(int wheel_dy, int anchor_x, int anchor_y) {
     double new_cy = ay_new - (anchor_y - h() / 2.0);
 
     const double W = maprender::world_width_at(new_zoom);
-    new_cx = std::clamp(new_cx, 0.0, W);
-    new_cy = std::clamp(new_cy, 0.0, W);
+    const double half_w = w() / 2.0;
+    const double half_h = h() / 2.0;
+    new_cx = std::clamp(new_cx, half_w, std::max(half_w, W - half_w));
+    new_cy = std::clamp(new_cy, half_h, std::max(half_h, W - half_h));
 
     zoom_ = new_zoom;
     center_lon_ = maprender::world_x_to_lon(new_cx, zoom_);

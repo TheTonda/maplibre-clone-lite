@@ -25,7 +25,7 @@ struct Viewport {
     int    tile_y_min()  const { return static_cast<int>(std::floor(world_top()   / kTileSize)); }
     int    tile_y_max()  const { return static_cast<int>(std::floor((world_top() + screen_h - 1) / kTileSize)); }
 
-    int max_tile_xy() const { return 1 << zoom; }
+    int max_tile_xy() const { return static_cast<int>(1u << zoom); }
 };
 
 }  // namespace maprender

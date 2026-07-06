@@ -27,14 +27,18 @@ void TileRasterizer::set_pixel(int x, int y, uint32_t color) {
     buf_[off+3] = (color >> 24) & 0xff;
 }
 
-// Simple scanline fill for a polygon ring. Handles convex/concave but not
-// self-intersecting rings (acceptable for OSM in MVP).
-void TileRasterizer::scanline_fill(const Ring& ring, uint32_t color) {
-    if (ring.size() < 3) return;
+// Scanline fill using the even-odd rule over one or more rings.  This
+// naturally supports holes: an outer ring paired with inner rings produces
+// alternating intersections that leave the hole regions unfilled.
+void TileRasterizer::scanline_fill(const std::vector<const Ring*>& rings,
+                                   uint32_t color) {
+    if (rings.empty()) return;
     double y_min = kSize, y_max = 0;
-    for (const auto& p : ring) {
-        y_min = std::min(y_min, p.y);
-        y_max = std::max(y_max, p.y);
+    for (const auto* ring : rings) {
+        for (const auto& p : *ring) {
+            y_min = std::min(y_min, p.y);
+            y_max = std::max(y_max, p.y);
+        }
     }
     int y0 = std::max(0, static_cast<int>(std::floor(y_min)));
     int y1 = std::min(kSize - 1, static_cast<int>(std::ceil(y_max)));
@@ -42,14 +46,16 @@ void TileRasterizer::scanline_fill(const Ring& ring, uint32_t color) {
     for (int y = y0; y <= y1; ++y) {
         const double yy = y + 0.5;
         std::vector<double> xs;
-        const size_t n = ring.size();
-        for (size_t i = 0, j = n - 1; i < n; j = i++) {
-            const Point& a = ring[j];
-            const Point& b = ring[i];
-            if ((a.y > yy) == (b.y > yy)) continue;
-            const double t = (yy - a.y) / (b.y - a.y);
-            const double x = a.x + (b.x - a.x) * t;
-            xs.push_back(x);
+        for (const auto* ring : rings) {
+            const size_t n = ring->size();
+            for (size_t i = 0, j = n - 1; i < n; j = i++) {
+                const Point& a = (*ring)[j];
+                const Point& b = (*ring)[i];
+                if ((a.y > yy) == (b.y > yy)) continue;
+                const double t = (yy - a.y) / (b.y - a.y);
+                const double x = a.x + (b.x - a.x) * t;
+                xs.push_back(x);
+            }
         }
         std::sort(xs.begin(), xs.end());
         for (size_t i = 0; i + 1 < xs.size(); i += 2) {
@@ -63,8 +69,16 @@ void TileRasterizer::scanline_fill(const Ring& ring, uint32_t color) {
     }
 }
 
-void TileRasterizer::draw_area(const Ring& ring, uint32_t color) {
-    scanline_fill(ring, color);
+void TileRasterizer::draw_area(const Ring& outer, uint32_t color) {
+    scanline_fill({&outer}, color);
+}
+
+void TileRasterizer::draw_area(const Ring& outer,
+                               const std::vector<Ring>& holes,
+                               uint32_t color) {
+    std::vector<const Ring*> rings = {&outer};
+    for (const auto& hole : holes) rings.push_back(&hole);
+    scanline_fill(rings, color);
 }
 
 void TileRasterizer::thick_line_segment(const Point& a0, const Point& b0,
@@ -86,13 +100,21 @@ void TileRasterizer::thick_line_segment(const Point& a0, const Point& b0,
     rect.push_back({b.x - nx, b.y - ny});
     rect.push_back({a.x - nx, a.y - ny});
     rect.push_back(rect.front());
-    scanline_fill(rect, color);
+    scanline_fill({&rect}, color);
 }
 
 void TileRasterizer::draw_line(const Ring& line, float width, uint32_t color) {
     if (line.size() < 2) return;
+    // Clip each segment independently.  Clipping the whole polyline at once
+    // can join disconnected pieces when a line exits and re-enters the tile,
+    // producing spurious diagonal strokes across the tile.
+    const double margin = std::max(2.0, width * 0.5 + 1.0);
     for (size_t i = 1; i < line.size(); ++i) {
-        thick_line_segment(line[i-1], line[i], width, color);
+        Ring seg{line[i-1], line[i]};
+        auto clipped = clip_to_rect(seg, kSize, margin, false);
+        for (size_t j = 1; j < clipped.size(); ++j) {
+            thick_line_segment(clipped[j-1], clipped[j], width, color);
+        }
     }
 }
 

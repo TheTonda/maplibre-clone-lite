@@ -73,3 +73,46 @@ TEST(Render, ZoomAnchorsAndClamps) {
     EXPECT_EQ(mr_max_zoom(ctx), 8);
     mr_close(ctx);
 }
+
+TEST(Render, HighZoomFrameNotBlank) {
+    MR_Context* ctx = mr_open("engine/tests/fixtures/highzoom.webp.mbtiles");
+    ASSERT_NE(ctx, nullptr) << mr_last_error(nullptr);
+    EXPECT_EQ(mr_min_zoom(ctx), 18);
+    EXPECT_EQ(mr_max_zoom(ctx), 18);
+
+    // Center on the corner shared by the four fixture tiles.
+    const double lon = 77.22;
+    const double lat = 28.62;
+    mr_set_view(ctx, lon, lat, 18, 256, 256);
+    const MR_Frame* f = mr_render(ctx);
+    ASSERT_NE(f, nullptr);
+    ASSERT_EQ(mr_frame_width(f), 256);
+    ASSERT_EQ(mr_frame_height(f), 256);
+
+    const unsigned char* px = mr_frame_pixels(f);
+    size_t non_bg = 0;
+    for (size_t i = 0; i < 256 * 256; ++i) {
+        const unsigned char r = px[i*4], g = px[i*4+1], b = px[i*4+2];
+        if (r != 0xee || g != 0xee || b != 0xee) ++non_bg;
+    }
+    EXPECT_GT(non_bg, 0u);
+
+    // With the 256x256 viewport centered on the corner, every pixel should
+    // come from one of the four coloured tiles.
+    EXPECT_EQ(non_bg, 256u * 256u);
+
+    // Pan by exactly one tile and render again; the pixel content should
+    // change because a different tile is now centered.
+    std::vector<unsigned char> before(px, px + 256 * 256 * 4);
+    mr_pan(ctx, 256, 0);
+    const MR_Frame* f2 = mr_render(ctx);
+    ASSERT_NE(f2, nullptr);
+    const unsigned char* px2 = mr_frame_pixels(f2);
+    bool any_diff = false;
+    for (size_t i = 0; i < before.size(); ++i) {
+        if (before[i] != px2[i]) { any_diff = true; break; }
+    }
+    EXPECT_TRUE(any_diff);
+
+    mr_close(ctx);
+}

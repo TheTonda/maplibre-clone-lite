@@ -1,6 +1,6 @@
-// Generates a tiny WebP-raster .mbtiles test fixture covering exactly the
-// z=8 tiles inside the New Delhi bounds. Each tile is a 256x256 solid colour
-// so we can eyeball that the engine's TMS flip and tile math are correct.
+// Generates a tiny WebP-raster .mbtiles test fixture at z=18.
+// Four solid-colour tiles arranged in a 2x2 grid so we can verify the
+// engine's high-zoom TMS flip, tile range, and blitting.
 
 #include <sqlite3.h>
 #include <webp/encode.h>
@@ -21,7 +21,7 @@ namespace {
 
 constexpr int kTile = 256;
 constexpr int kBands = 4;
-constexpr int kZ = 8;
+constexpr int kZ = 18;
 
 struct Color { unsigned char r, g, b; };
 
@@ -39,15 +39,14 @@ bool encode_solid(Color c, std::vector<unsigned char>& out) {
 }
 
 int run() {
-    const double bw = 76.692, bs = 28.183, be = 77.733, bn = 28.969;
-
-    const int x_min = static_cast<int>(std::floor(maprender::lon_to_world_x(bw, kZ) / kTile));
-    const int x_max = static_cast<int>(std::floor(maprender::lon_to_world_x(be, kZ) / kTile));
-    const int y_min = static_cast<int>(std::floor(maprender::lat_to_world_y(bn, kZ) / kTile));
-    const int y_max = static_cast<int>(std::floor(maprender::lat_to_world_y(bs, kZ) / kTile));
+    // Pick a concrete lon/lat in central New Delhi and compute its tile.
+    const double lon = 77.22;
+    const double lat = 28.62;
+    const int x0 = static_cast<int>(std::floor(maprender::lon_to_world_x(lon, kZ) / kTile));
+    const int y0 = static_cast<int>(std::floor(maprender::lat_to_world_y(lat, kZ) / kTile));
 
     sqlite3* db = nullptr;
-    const std::string path = std::string(MR_FIXTURE_OUT) + "/sample.webp.mbtiles";
+    const std::string path = std::string(MR_FIXTURE_OUT) + "/highzoom.webp.mbtiles";
     remove(path.c_str());
     if (sqlite3_open(path.c_str(), &db) != SQLITE_OK) {
         std::fprintf(stderr, "open %s\n", path.c_str());
@@ -69,9 +68,9 @@ int run() {
         sqlite3_bind_text(ms,2,v.c_str(),-1,SQLITE_TRANSIENT);
         sqlite3_step(ms); sqlite3_reset(ms);
     };
-    meta("name","test"); meta("format","webp");
-    meta("minzoom","8"); meta("maxzoom","8");
-    meta("bounds","76.692,28.183,77.733,28.969");
+    meta("name","highzoom-test"); meta("format","webp");
+    meta("minzoom","18"); meta("maxzoom","18");
+    meta("bounds","77.20000,28.60000,77.24000,28.64000");
     meta("scheme","tms"); meta("type","baselayer");
     sqlite3_finalize(ms);
 
@@ -90,8 +89,8 @@ int run() {
     };
     for (int dx = 0; dx < 2; ++dx) {
         for (int dy = 0; dy < 2; ++dy) {
-            const int x = x_min + dx;
-            const int slippy_y = y_min + dy;
+            const int x = x0 + dx;
+            const int slippy_y = y0 + dy;
             const int tms_row = tms_flip - slippy_y;
             std::vector<unsigned char> blob;
             const Color c = palette[dy * 2 + dx];
@@ -110,7 +109,7 @@ int run() {
     sqlite3_finalize(ti);
     sqlite3_close(db);
     std::printf("wrote %s  tiles=%d  z=%d  x=[%d..%d] slippy_y=[%d..%d]\n",
-                path.c_str(), n_tiles, kZ, x_min, x_max, y_min, y_max);
+                path.c_str(), n_tiles, kZ, x0, x0+1, y0, y0+1);
     return 0;
 }
 

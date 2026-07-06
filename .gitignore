@@ -24,6 +24,15 @@ data/tiles/*
 !data/raw/.gitkeep
 !data/intermediate/.gitkeep
 !data/tiles/.gitkeep
+data/*.osm.pbf
+data/*.mbtiles
+data/*.webp.mbtiles
+data/snapshots*/
+data/compare*/
+data/diff*/
+
+# Agent workspace
+.opencode/
 
 # Android
 android/.gradle/
