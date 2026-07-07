@@ -18,20 +18,36 @@ void TileRasterizer::clear(uint32_t bg) {
     }
 }
 
-void TileRasterizer::set_pixel(int x, int y, uint32_t color) {
+void TileRasterizer::blend_pixel(int x, int y, uint32_t color, float cov) {
     if (x < 0 || x >= kSize || y < 0 || y >= kSize) return;
+    if (cov <= 0.0f) return;
+    cov = std::min(1.0f, cov);
     const size_t off = (static_cast<size_t>(y) * kSize + x) * 4;
-    buf_[off+0] = color & 0xff;
-    buf_[off+1] = (color >> 8) & 0xff;
-    buf_[off+2] = (color >> 16) & 0xff;
-    buf_[off+3] = (color >> 24) & 0xff;
+    // Tiles are blitted by the engine with a plain memcpy (no alpha
+    // compositing), so they must stay fully opaque.  Antialiasing is achieved
+    // by blending the source colour into the existing opaque background in
+    // proportion to coverage, keeping alpha at 255.  Writing partial alpha
+    // here produced ragged, gappy polygon edges once the tile was blitted.
+    const float a = ((color >> 24) & 0xff) / 255.0f;
+    for (int c = 0; c < 3; ++c) {
+        const float src = (color >> (c * 8)) & 0xff;
+        const float dst = buf_[off + c];
+        const float out = src * a * cov + dst * (1.0f - a * cov);
+        buf_[off + c] = static_cast<uint8_t>(std::min(255.0f, std::max(0.0f, out + 0.5f)));
+    }
+    buf_[off + 3] = 0xff;
 }
 
 // Scanline fill using the even-odd rule over one or more rings.  This
 // naturally supports holes: an outer ring paired with inner rings produces
 // alternating intersections that leave the hole regions unfilled.
+//
+// Per-pixel coverage is computed from the exact fractional intersection
+// positions so polygon edges are antialiased (even/consistent) instead of
+// ragged.  The previous conservative floor/ceil fill over-filled every edge
+// by up to a pixel, which made boundaries look uneven and blocky.
 void TileRasterizer::scanline_fill(const std::vector<const Ring*>& rings,
-                                   uint32_t color) {
+                                     uint32_t color) {
     if (rings.empty()) return;
     double y_min = kSize, y_max = 0;
     for (const auto* ring : rings) {
@@ -57,14 +73,20 @@ void TileRasterizer::scanline_fill(const std::vector<const Ring*>& rings,
                 xs.push_back(x);
             }
         }
+        if (xs.size() < 2) continue;
         std::sort(xs.begin(), xs.end());
         for (size_t i = 0; i + 1 < xs.size(); i += 2) {
-            // Conservative rasterization: any pixel touched by the polygon is filled.
-            int x0 = static_cast<int>(std::floor(xs[i]));
-            int x1 = static_cast<int>(std::ceil(xs[i+1]));
-            x0 = std::max(0, x0);
-            x1 = std::min(kSize - 1, x1);
-            for (int x = x0; x <= x1; ++x) set_pixel(x, y, color);
+            const double x_lo = xs[i];
+            const double x_hi = xs[i + 1];
+            const int l = static_cast<int>(std::floor(x_lo));
+            const int r = static_cast<int>(std::floor(x_hi));
+            if (l == r) {
+                blend_pixel(l, y, color, x_hi - x_lo);
+            } else {
+                blend_pixel(l, y, color, static_cast<double>(l + 1) - x_lo);
+                for (int x = l + 1; x <= r - 1; ++x) blend_pixel(x, y, color, 1.0f);
+                blend_pixel(r, y, color, x_hi - r);
+            }
         }
     }
 }
@@ -88,7 +110,8 @@ void TileRasterizer::thick_line_segment(const Point& a0, const Point& b0,
     const double dy = b.y - a.y;
     const double len = std::hypot(dx, dy);
     if (len < 1e-6) {
-        set_pixel(static_cast<int>(a.x), static_cast<int>(a.y), color);
+        blend_pixel(static_cast<int>(std::round(a.x)),
+                    static_cast<int>(std::round(a.y)), color, 1.0f);
         return;
     }
     const double nx = -dy / len * width * 0.5;

@@ -26,7 +26,7 @@ public:
 private:
     std::vector<uint8_t> buf_;  // RGBA8, kSize*kSize*4
 
-    void set_pixel(int x, int y, uint32_t color);
+    void blend_pixel(int x, int y, uint32_t color, float coverage);
     void scanline_fill(const std::vector<const Ring*>& rings, uint32_t color);
     void thick_line_segment(const Point& a, const Point& b, float width, uint32_t color);
 };

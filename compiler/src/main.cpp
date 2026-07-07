@@ -359,7 +359,8 @@ int main(int argc, char** argv) {
             auto work = bucket_tiles(sources, z, opt.max_z);
             std::fprintf(stderr, "z=%d  tiles=%zu\n", z, work.size());
             const int max_xy = static_cast<int>(1u << z);
-            const float line_scale = std::pow(2.0f, static_cast<float>(z - 14) * 0.5f);
+            const float raw_scale = std::pow(2.0f, static_cast<float>(z - 14) * 0.5f);
+            const float line_scale = std::min(3.0f, raw_scale);
             const bool lossless = (z >= opt.lossless_zoom);
             const float webp_quality = lossless ? 100.0f : opt.quality * 100.0f;
 

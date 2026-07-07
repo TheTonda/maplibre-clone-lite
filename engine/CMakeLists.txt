@@ -61,6 +61,10 @@ if(MR_BUILD_TESTS)
     target_link_libraries(snapshot PRIVATE
         maprender StbImageWrite::StbImageWrite)
 
+    add_executable(tile_sampler tests/tile_sampler.cpp)
+    target_link_libraries(tile_sampler PRIVATE
+        maprender StbImageWrite::StbImageWrite)
+
     add_executable(engine_tests
         tests/test_viewport.cpp
         tests/test_cache.cpp
